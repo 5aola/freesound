@@ -544,7 +544,13 @@ class SoundManager(models.Manager):
             include_similarity_vectors=include_similarity_vectors,
             include_remix_subqueries=include_remix_subqueries,
         )
-        qs = qs.filter(moderation_state="OK", processing_state="OK", collections=collection_id).order_by("-created")
+        # Only include accepted (status="OK") collection sounds, matching Collection.num_sounds
+        qs = qs.filter(
+            moderation_state="OK",
+            processing_state="OK",
+            collectionsound__collection_id=collection_id,
+            collectionsound__status="OK",
+        ).order_by("-created")
         if limit:
             qs = qs[:limit]
         return qs

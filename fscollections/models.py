@@ -25,7 +25,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import F, Sum
 from django.db.models.functions import Greatest
-from django.db.models.signals import m2m_changed, post_delete, post_save
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -126,9 +126,9 @@ class Collection(models.Model):
         return result["total_duration"] or 0
 
     def save(self, *args, **kwargs):
-        # Update num_sounds count
+        # Update num_sounds count (accepted sounds only; also covers bulk ops that skip the signals)
         if self.pk:
-            self.num_sounds = CollectionSound.objects.filter(collection=self).count()
+            self.num_sounds = Sound.objects.bulk_sounds_for_collection(self.id).count()
 
         super().save(*args, **kwargs)
 
@@ -152,16 +152,12 @@ class CollectionSound(models.Model):
         unique_together = ("sound", "collection")
 
 
-@receiver(post_save, sender=CollectionSound)
+@receiver([post_save, post_delete], sender=CollectionSound)
 def update_collection_num_sounds(sender, instance, **kwargs):
-    if instance:
-        Collection.objects.filter(collectionsound=instance).update(num_sounds=Greatest(F("num_sounds") + 1, 0))
-
-
-@receiver(m2m_changed, sender=CollectionSound)
-def update_collection_num_sounds_bulk_changes(sender, instance, **kwargs):
-    if instance:
-        Collection.objects.filter(collectionsound=instance).update(num_sounds=Greatest(F("num_sounds") - 1, 0))
+    # Sync num_sounds when a sound is added, removed, or its status changes
+    if instance and instance.collection_id:
+        num_sounds = Sound.objects.bulk_sounds_for_collection(instance.collection_id).count()
+        Collection.objects.filter(id=instance.collection_id).update(num_sounds=num_sounds)
 
 
 @receiver(post_delete, sender=CollectionSound)

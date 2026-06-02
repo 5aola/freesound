@@ -519,3 +519,35 @@ class CollectionTest(TestCase):
         self.assertEqual(0, serialized_by_id[self.sound2.id]["featured_order"])
         self.assertEqual(1, serialized_by_id[self.sound.id]["featured_order"])
         self.assertIsNone(serialized_by_id[self.sound1.id]["featured_order"])
+
+    def test_num_sounds_counts_only_accepted_sounds(self):
+        CollectionSound.objects.create(user=self.user, sound=self.sound, collection=self.collection, status="OK")
+        CollectionSound.objects.create(user=self.user, sound=self.sound1, collection=self.collection, status="PE")
+        CollectionSound.objects.create(user=self.user, sound=self.sound2, collection=self.collection, status="RE")
+        self.collection.refresh_from_db()
+        self.assertEqual(1, self.collection.num_sounds)
+
+    def test_num_sounds_updates_on_status_change(self):
+        # A pending sound is not counted until it is accepted, and re-saving must not double-count
+        cs = CollectionSound.objects.create(user=self.user, sound=self.sound, collection=self.collection, status="PE")
+        self.collection.refresh_from_db()
+        self.assertEqual(0, self.collection.num_sounds)
+
+        cs.status = "OK"
+        cs.save()
+        self.collection.refresh_from_db()
+        self.assertEqual(1, self.collection.num_sounds)
+
+        cs.status = "RE"
+        cs.save()
+        self.collection.refresh_from_db()
+        self.assertEqual(0, self.collection.num_sounds)
+
+    def test_num_sounds_decrements_on_delete(self):
+        cs = CollectionSound.objects.create(user=self.user, sound=self.sound, collection=self.collection, status="OK")
+        self.collection.refresh_from_db()
+        self.assertEqual(1, self.collection.num_sounds)
+
+        cs.delete()
+        self.collection.refresh_from_db()
+        self.assertEqual(0, self.collection.num_sounds)
