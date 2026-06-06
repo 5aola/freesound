@@ -20,17 +20,14 @@
 
 
 from django import template
-from django.shortcuts import get_object_or_404
 
-from fscollections.models import Collection
 from sounds.models import Sound
 
 register = template.Library()
 
 
 @register.inclusion_tag("collections/display_collection.html", takes_context=True)
-def display_collection(context, collection_id):
-    collection = get_object_or_404(Collection, id=collection_id)
+def display_collection(context, collection):
     request = context.get("request")
     if collection.featured_sound_ids:
         header_sounds = Sound.objects.bulk_query_id_public(collection.featured_sound_ids)

@@ -100,11 +100,9 @@ class Collection(models.Model):
         return self.get_url("collection-stats-section")
 
     def get_attribution(self, sound_qs=None):
-        # If no queryset of sounds is provided, take it from the collection
+        # If no queryset of sounds is provided
         if sound_qs is None:
-            sound_qs = self.sounds.filter(processing_state="OK", moderation_state="OK").select_related(
-                "user", "license"
-            )
+            sound_qs = Sound.objects.bulk_sounds_for_collection(self.id)
 
         users = User.objects.filter(sounds__in=sound_qs).distinct()
         # Generate text file with license info
@@ -122,11 +120,12 @@ class Collection(models.Model):
         return "%d__%s__%s.zip" % (self.id, username_slug, name_slug)
 
     def get_total_collection_sounds_length(self):
-        result = self.sounds.aggregate(total_duration=Sum("duration"))
+        # Count only accepted sounds
+        result = Sound.objects.bulk_sounds_for_collection(self.id).aggregate(total_duration=Sum("duration"))
         return result["total_duration"] or 0
 
     def save(self, *args, **kwargs):
-        # Update num_sounds count (accepted sounds only; also covers bulk ops that skip the signals)
+        # Update num_sounds count
         if self.pk:
             self.num_sounds = Sound.objects.bulk_sounds_for_collection(self.id).count()
 

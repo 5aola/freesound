@@ -5,8 +5,9 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils.text import slugify
 
-from fscollections.models import Collection, CollectionSound
+from fscollections.models import Collection, CollectionDownloadSound, CollectionSound
 from fscollections.views import serialize_collection_sounds
+from sounds.models import Sound
 from utils.test_helpers import create_user_and_sounds
 
 
@@ -551,3 +552,22 @@ class CollectionTest(TestCase):
         cs.delete()
         self.collection.refresh_from_db()
         self.assertEqual(0, self.collection.num_sounds)
+
+    def test_total_length_counts_only_accepted_sounds(self):
+        Sound.objects.filter(id=self.sound.id).update(duration=10)
+        Sound.objects.filter(id=self.sound1.id).update(duration=20)
+        CollectionSound.objects.create(user=self.user, sound=self.sound, collection=self.collection, status="OK")
+        CollectionSound.objects.create(user=self.user, sound=self.sound1, collection=self.collection, status="PE")
+        self.assertEqual(10, self.collection.get_total_collection_sounds_length())
+
+    def test_download_excludes_non_accepted_sounds(self):
+        self.client.force_login(self.user)
+        CollectionSound.objects.create(user=self.user, sound=self.sound, collection=self.collection, status="OK")
+        CollectionSound.objects.create(user=self.user, sound=self.sound1, collection=self.collection, status="PE")
+        resp = self.client.get(
+            reverse("download-collection", args=[self.collection.id, slugify(self.collection.name)])
+        )
+        self.assertEqual(200, resp.status_code)
+        self.assertEqual(
+            1, CollectionDownloadSound.objects.filter(collection_download__collection=self.collection).count()
+        )

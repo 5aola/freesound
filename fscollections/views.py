@@ -355,10 +355,8 @@ def edit_collection(request, collection):
 @login_required
 @resolve_collection_from_url
 def download_collection(request, collection):
-    collection_sounds = CollectionSound.objects.filter(collection=collection).values("sound_id")
-    sounds_list = Sound.objects.filter(
-        id__in=collection_sounds, processing_state="OK", moderation_state="OK"
-    ).select_related("user", "license")
+    # Only accepted sounds are part of a collection
+    sounds_list = Sound.objects.bulk_sounds_for_collection(collection.id)
 
     if "range" not in request.headers:
         """

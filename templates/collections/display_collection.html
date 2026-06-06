@@ -3,6 +3,7 @@
 {% load display_sound %}
 {% load bw_templatetags %}
 
+{% cache 43200 bw_display_collection collection.id collection.modified collection.num_sounds collection.num_downloads collection.featured_sound_ids %}
 <div class="bw-display-pack v-spacing-3">
     <div class="bw-carousel-container">
         <div class="bw-carousel-wrapper">
@@ -54,3 +55,4 @@
         {% endif %}
     </div>
 </div>
+{% endcache %}
