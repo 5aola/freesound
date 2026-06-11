@@ -28,6 +28,7 @@ from apiv2.apiv2_utils import ApiSearchPaginator
 from apiv2.models import ApiV2Client
 from apiv2.serializers import DEFAULT_FIELDS_IN_SOUND_LIST, SoundListSerializer, SoundSerializer
 from bookmarks.models import Bookmark, BookmarkCategory
+from fscollections.models import Collection, CollectionSound
 from sounds.models import Sound
 from utils.test_helpers import create_user_and_sounds
 
@@ -58,6 +59,35 @@ class TestAPiViews(TestCase):
         # 200 response on pack instance download
         # This test uses a https connection.
         resp = self.client.get(reverse("apiv2-pack-download", kwargs={"pk": packs[0].id}), secure=True)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_collection_views_response_ok(self):
+        user, packs, sounds = create_user_and_sounds(num_sounds=5, num_packs=1)
+        for sound in sounds:
+            sound.change_processing_state("OK")
+            sound.change_moderation_state("OK")
+
+        collection = Collection.objects.create(user=user, name="My collection", public=True)
+        for sound in sounds:
+            CollectionSound.objects.create(user=user, sound=sound, collection=collection, status="OK")
+
+        # Login so api returns session login based responses
+        self.client.force_login(user)
+
+        # 200 response on collection instance
+        resp = self.client.get(reverse("apiv2-collection-instance", kwargs={"pk": collection.id}))
+        self.assertEqual(resp.status_code, 200)
+
+        # 200 response on collection sounds list (make it return all fields)
+        resp = self.client.get(reverse("apiv2-collection-sound-list", kwargs={"pk": collection.id}) + "?fields=*")
+        self.assertEqual(resp.status_code, 200)
+
+        # 200 response on user collections list
+        resp = self.client.get(reverse("apiv2-user-collections", kwargs={"username": user.username}))
+        self.assertEqual(resp.status_code, 200)
+
+        # 200 response on collection download (uses an https connection)
+        resp = self.client.get(reverse("apiv2-collection-download", kwargs={"pk": collection.id}), secure=True)
         self.assertEqual(resp.status_code, 200)
 
     def test_basic_user_response_ok(self):
@@ -102,6 +132,73 @@ class TestAPiViews(TestCase):
         # 200 response on user instance
         resp = self.client.get(reverse("apiv2-sound-instance", kwargs={"pk": sounds[0].id}))
         self.assertEqual(resp.status_code, 200)
+
+
+class TestCollectionAPIVisibility(TestCase):
+    fixtures = ["licenses"]
+
+    def setUp(self):
+        self.owner = User.objects.create_user("collection_owner", email="owner@mail.com")
+        self.maintainer = User.objects.create_user("collection_maintainer", email="maintainer@mail.com")
+        self.other_user = User.objects.create_user("other_user", email="other@mail.com")
+
+        _, _, sounds = create_user_and_sounds(user=self.owner, num_sounds=4, num_packs=1)
+        for sound in sounds:
+            sound.change_processing_state("OK")
+            sound.change_moderation_state("OK")
+        self.sounds = sounds
+
+        self.public_collection = Collection.objects.create(user=self.owner, name="Public", public=True)
+        CollectionSound.objects.create(
+            user=self.owner, sound=self.sounds[0], collection=self.public_collection, status="OK"
+        )
+
+        self.private_collection = Collection.objects.create(user=self.owner, name="Private", public=False)
+        self.private_collection.maintainers.add(self.maintainer)
+        CollectionSound.objects.create(
+            user=self.owner, sound=self.sounds[1], collection=self.private_collection, status="OK"
+        )
+
+    def _get_collection_endpoints(self, collection):
+        return [
+            reverse("apiv2-collection-instance", kwargs={"pk": collection.id}),
+            reverse("apiv2-collection-sound-list", kwargs={"pk": collection.id}),
+            reverse("apiv2-collection-download", kwargs={"pk": collection.id}),
+        ]
+
+    def test_public_collection_visible_to_other_user(self):
+        self.client.force_login(self.other_user)
+        for url in self._get_collection_endpoints(self.public_collection):
+            resp = self.client.get(url, secure=True)
+            self.assertEqual(resp.status_code, 200, msg=url)
+
+    def test_private_collection_hidden_from_other_user(self):
+        self.client.force_login(self.other_user)
+        for url in self._get_collection_endpoints(self.private_collection):
+            resp = self.client.get(url, secure=True)
+            self.assertEqual(resp.status_code, 404, msg=url)
+
+    def test_private_collection_visible_to_owner(self):
+        self.client.force_login(self.owner)
+        for url in self._get_collection_endpoints(self.private_collection):
+            resp = self.client.get(url, secure=True)
+            self.assertEqual(resp.status_code, 200, msg=url)
+
+    def test_private_collection_visible_to_maintainer(self):
+        self.client.force_login(self.maintainer)
+        for url in self._get_collection_endpoints(self.private_collection):
+            resp = self.client.get(url, secure=True)
+            self.assertEqual(resp.status_code, 200, msg=url)
+
+    def test_user_collections_returns_only_public(self):
+        self.client.force_login(self.other_user)
+        resp = self.client.get(
+            reverse("apiv2-user-collections", kwargs={"username": self.owner.username}), secure=True
+        )
+        self.assertEqual(resp.status_code, 200)
+        results = resp.json()["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["name"], "Public")
 
 
 class TestAPI(TestCase):
@@ -464,11 +561,28 @@ class TestMeResources(TestCase):
         Bookmark.objects.create(user=self.end_user, sound_id=sounds[2].id, category=self.category)
         Bookmark.objects.create(user=self.end_user, sound_id=sounds[3].id, category=self.category)
 
+        # A collection owned by the end user, and a collection owned by someone else that they maintain
+        self.owned_collection = Collection.objects.create(name="Owned", user=self.end_user, public=False)
+        self.maintained_collection = Collection.objects.create(name="Maintained", user=self.dev_user, public=False)
+        self.maintained_collection.maintainers.add(self.end_user)
+
     def test_me_resource(self):
         # 200 response on me resource
         resp = self.client.get(reverse("apiv2-me"), secure=True, **self.auth_headers)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["username"], self.end_user.username)
+
+    def test_me_collections_resource(self):
+        # 200 response on list of collections owned or maintained by the user
+        resp = self.client.get(reverse("apiv2-me-collections"), secure=True, **self.auth_headers)
+        self.assertEqual(resp.status_code, 200)
+        names = {c["name"] for c in resp.json()["results"]}
+        self.assertEqual(names, {"Owned", "Maintained"})
+
+    def test_me_collections_requires_authentication(self):
+        # Without authentication the resource can not be accessed
+        resp = self.client.get(reverse("apiv2-me-collections"), secure=True)
+        self.assertIn(resp.status_code, [401, 403])
 
     def test_bookmark_resources(self):
         # 200 response on list of bookmark categories

@@ -1,0 +1,24 @@
+{% load display_collections %}
+{% if latest_collections %}
+    <div class="row">
+        {% for collection in latest_collections %}
+            <div class="col-6 col-lg-4">
+                {% display_collection collection %}
+            </div>
+        {% endfor %}
+    </div>
+    {% if is_own_profile %}
+    <div class="v-spacing-top-4 text-center">
+        <a class="no-hover" href="{% url 'your-collections' %}"><button class="btn-primary">See all your collections</button></a>
+    </div>
+    {% endif %}
+{% else %}
+    <div class="text-center">
+        <h5>No collections... &#128543</h5>
+        {% if is_own_profile %}
+        <div class="text-grey v-spacing-top-1">Looks like you have no collections yet</div>
+        {% else %}
+        <div class="text-grey v-spacing-top-1">Looks like {{ user.username }} has no public collections yet</div>
+        {% endif %}
+    </div>
+{% endif %}

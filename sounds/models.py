@@ -27,6 +27,7 @@ import os
 import random
 import zlib
 from collections import Counter
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import yaml
@@ -137,6 +138,37 @@ class License(models.Model):
 
     def __str__(self):
         return self.name_with_version
+
+
+VARIOUS_LICENSES_NAME = "Various licenses"
+
+
+def get_license_summary(license_ids, license_names, container_noun):
+    """Summarise the licenses of a group of sounds (shared by packs and collections).
+
+    ``license_ids`` and ``license_names`` are parallel lists with one entry per sound. Returns a
+    namespace with the fields used by the stats templates (``name``, ``id``, ``icon_name``, ``text``,
+    ``deed_url``). If all sounds share one license that license is summarised, otherwise the result
+    describes a "Various licenses" mix. Empty input yields a blank summary so callers can hide it.
+    """
+    if not license_ids:
+        return SimpleNamespace(name="", id=None, icon_name="", text="", deed_url="")
+    if len(set(license_ids)) == 1:
+        name, license_id = license_names[0], license_ids[0]
+    else:
+        name, license_id = VARIOUS_LICENSES_NAME, None
+    icon_name = License.bw_cc_icon_name_from_license_name(name)
+    if license_id is not None:
+        license = License.objects.get(id=license_id)
+        text, deed_url = license.get_short_summary(), license.deed_url
+    else:
+        text = (
+            f"This {container_noun} contains sounds released under various licenses. Please check every "
+            f"individual sound page (or the <i>readme</i> file upon downloading the {container_noun}) to "
+            f"know under which license each sound is released."
+        )
+        deed_url = ""
+    return SimpleNamespace(name=name, id=license_id, icon_name=icon_name, text=text, deed_url=deed_url)
 
 
 class BulkUploadProgress(models.Model):
@@ -2018,8 +2050,6 @@ class Pack(models.Model):
     num_sounds = models.PositiveIntegerField(default=0)  # Updated via django Pack.process() method
     is_deleted = models.BooleanField(db_index=True, default=False)
 
-    VARIOUS_LICENSES_NAME = "Various licenses"
-
     objects = PackManager()
 
     def __str__(self):
@@ -2170,43 +2200,26 @@ class Pack(models.Model):
             license_names = [lname for lname, _ in licenses_data]
             return license_ids, license_names
 
+    @cached_property
+    def license_summary(self):
+        license_ids, license_names = self.licenses_data
+        return get_license_summary(license_ids, license_names, "pack")
+
     @property
     def license_summary_name_and_id(self):
-        license_ids, license_names = self.licenses_data
-
-        if len(set(license_ids)) == 1:
-            # All sounds have same license
-            license_summary_name = license_names[0]
-            license_id = license_ids[0]
-        else:
-            license_summary_name = self.VARIOUS_LICENSES_NAME
-            license_id = None
-        return license_summary_name, license_id
+        return self.license_summary.name, self.license_summary.id
 
     @property
     def license_bw_icon_name(self):
-        license_summary_name, _ = self.license_summary_name_and_id
-        return License.bw_cc_icon_name_from_license_name(license_summary_name)
+        return self.license_summary.icon_name
 
     @property
     def license_summary_text(self):
-        license_summary_name, license_summary_id = self.license_summary_name_and_id
-        if license_summary_name != self.VARIOUS_LICENSES_NAME:
-            return License.objects.get(id=license_summary_id).get_short_summary
-        else:
-            return (
-                "This pack contains sounds released under various licenses. Please check every individual sound page "
-                "(or the <i>readme</i> file upon downloading the pack) to know under which "
-                "license each sound is released."
-            )
+        return self.license_summary.text
 
     @property
     def license_summary_deed_url(self):
-        license_summary_name, license_summary_id = self.license_summary_name_and_id
-        if license_summary_name != self.VARIOUS_LICENSES_NAME:
-            return License.objects.get(id=license_summary_id).deed_url
-        else:
-            return ""
+        return self.license_summary.deed_url
 
     @property
     def has_geotags(self):

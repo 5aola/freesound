@@ -1276,6 +1276,48 @@ Examples
 {{examples_UserPacks}}
 
 
+.. _user_collections:
+
+User Collections
+=========================================================
+
+::
+
+  GET /apiv2/users/<username>/collections/
+
+This resource allows the retrieval of a list of *public* collections created by a particular Freesound user.
+Private collections are never returned by this resource.
+
+
+Response
+--------
+
+User Collections resource returns a paginated list of the public collections created by a user, with a similar structure as :ref:`sound-list-response`:
+
+::
+
+  {
+    "count": <total number of collections>,
+    "next": <link to the next page of collections (null if none)>,
+    "results": [
+        <most recent collection created by the user>,
+        <second most recent collection created by the user>,
+        ...
+    ],
+    "previous": <link to the previous page of collections (null if none)>
+  }
+
+Each collection entry consists of a dictionary with the same fields returned in the :ref:`collection_instance` response.
+Collections are sorted according to their creation date (recent collections in the top of the list).
+Parameters ``page`` and ``page_size`` can be used just like in :ref:`sound-list-response` to deal with the pagination of the response.
+
+
+Examples
+--------
+
+{{examples_UserCollections}}
+
+
 Pack resources
 >>>>>>>>>>>>>>
 
@@ -1355,6 +1397,95 @@ Examples
 --------
 
 {{examples_DownloadPack}}
+
+
+Collection resources
+>>>>>>>>>>>>>>>>>>>>
+
+A collection is a user-curated group of sounds (possibly from many different users). Collections can be public
+or private. Private collections are only accessible through the API to their owner and maintainers, authenticated
+using :ref:`oauth-authentication` or session authentication; requests that can not identify such a user (including
+token-authenticated requests) receive a ``404`` for private collections so that their existence is not disclosed.
+Only sounds that have been accepted into the collection (and that are processed and moderated) are returned.
+
+.. _collection_instance:
+
+Collection Instance
+=========================================================
+
+::
+
+  GET /apiv2/collections/<collection_id>/
+
+This resource allows the retrieval of information about a collection.
+
+
+Response
+--------
+
+The Collection Instance response is a dictionary including the following properties/fields:
+
+.. rst-class:: fieldstable
+====================  ================  ====================================================================================
+Name                  Type              Description
+====================  ================  ====================================================================================
+id                    integer           The unique identifier of this collection.
+url                   URI               The URI for this collection on the Freesound website.
+name                  string            The name the user gave to the collection.
+description           string            The description the user gave to the collection (if any).
+created               string            The date when the collection was created (e.g. "2014-04-16T20:07:11.145").
+username              string            Username of the creator of the collection.
+num_sounds            integer           The number of (accepted) sounds in the collection.
+sounds                URI               The URI for a list of sounds in the collection.
+num_downloads         integer           The number of times this collection has been downloaded.
+====================  ================  ====================================================================================
+
+
+Examples
+--------
+
+{{examples_CollectionInstance}}
+
+
+.. _collection_sounds:
+
+Collection Sounds
+=========================================================
+
+::
+
+  GET /apiv2/collections/<collection_id>/sounds/
+
+This resource allows the retrieval of the list of sounds included in a collection.
+
+
+Response
+--------
+
+Collection Sounds resource returns a sound list just like :ref:`sound-list-response`.
+The same extra request parameters apply (``page``, ``page_size``, ``fields``).
+
+
+Examples
+--------
+
+{{examples_CollectionSounds}}
+
+
+Download Collection (OAuth2 required)
+=========================================================
+
+::
+
+  GET /apiv2/collections/<collection_id>/download/
+
+This resource allows you to download all the sounds of a collection in a single zip file.
+It requires :ref:`oauth-authentication`.
+
+Examples
+--------
+
+{{examples_DownloadCollection}}
 
 
 Other resources
@@ -1447,3 +1578,29 @@ Examples
 --------
 
 {{examples_MeBookmarkCategorySounds}}
+
+
+My Collections
+=========================================================
+
+::
+
+  GET /apiv2/me/collections/
+
+This resource allows the retrieval of a list of collections owned or maintained by the logged in Freesound user.
+Unlike :ref:`user_collections`, this resource also includes the user's *private* collections.
+
+
+Response
+--------
+
+My Collections resource returns a paginated list of collections, with each entry having the same structure as the
+:ref:`collection_instance` response. Collections are sorted by their last modification date (recently modified
+collections at the top of the list). Parameters ``page`` and ``page_size`` can be used just like in
+:ref:`sound-list-response` to deal with the pagination of the response.
+
+
+Examples
+--------
+
+{{examples_MeCollections}}

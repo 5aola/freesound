@@ -41,6 +41,7 @@ urlpatterns = [
         views.MeBookmarkCategorySounds.as_view(),
         name="apiv2-me-bookmark-category-sounds",
     ),
+    path("me/collections/", views.MeCollections.as_view(), name="apiv2-me-collections"),
     # Text/content/combined search
     path("search/", views.TextSearch.as_view(), name="apiv2-sound-search"),
     path("search/text/", views.TextSearch.as_view(), name="apiv2-sound-text-search"),
@@ -66,10 +67,15 @@ urlpatterns = [
     path("users/<username>/", views.UserInstance.as_view(), name="apiv2-user-instance"),
     path("users/<username>/sounds/", views.UserSounds.as_view(), name="apiv2-user-sound-list"),
     path("users/<username>/packs/", views.UserPacks.as_view(), name="apiv2-user-packs"),
+    path("users/<username>/collections/", views.UserCollections.as_view(), name="apiv2-user-collections"),
     # Packs
     path("packs/<int:pk>/", views.PackInstance.as_view(), name="apiv2-pack-instance"),
     path("packs/<int:pk>/sounds/", views.PackSounds.as_view(), name="apiv2-pack-sound-list"),
     path("packs/<int:pk>/download/", views.DownloadPack.as_view(), name="apiv2-pack-download"),
+    # Collections
+    path("collections/<int:pk>/", views.CollectionInstance.as_view(), name="apiv2-collection-instance"),
+    path("collections/<int:pk>/sounds/", views.CollectionSounds.as_view(), name="apiv2-collection-sound-list"),
+    path("collections/<int:pk>/download/", views.DownloadCollection.as_view(), name="apiv2-collection-download"),
     # Download item from link
     path("download/<token>/", views.download_from_token, name="apiv2-download_from_token"),
     #########################

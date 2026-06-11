@@ -26,6 +26,7 @@ from rest_framework import serializers
 
 from bookmarks.models import Bookmark, BookmarkCategory
 from comments.models import Comment
+from fscollections.models import Collection
 from sounds.models import Pack, Sound, SoundAnalysis
 from utils.forms import filename_has_valid_extension
 from utils.similarity_utilities import get_sounds_descriptors
@@ -606,6 +607,45 @@ class PackSerializer(serializers.HyperlinkedModelSerializer):
     def get_sounds(self, obj):
         return prepend_base(
             reverse("apiv2-pack-sound-list", args=[obj.id]), request_is_secure=self.context["request"].is_secure()
+        )
+
+    username = serializers.SerializerMethodField()
+
+    def get_username(self, obj):
+        return obj.user.username
+
+    description = serializers.SerializerMethodField()
+
+    def get_description(self, obj):
+        return obj.description or ""
+
+    created = serializers.SerializerMethodField()
+
+    def get_created(self, obj):
+        return obj.created.replace(microsecond=0)
+
+
+#####################
+# COLLECTION SERIALIZERS
+#####################
+
+
+class CollectionSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Collection
+        fields = ("id", "url", "name", "description", "created", "username", "num_sounds", "sounds", "num_downloads")
+
+    url = serializers.SerializerMethodField()
+
+    def get_url(self, obj):
+        return prepend_base(obj.get_absolute_url(), request_is_secure=self.context["request"].is_secure())
+
+    sounds = serializers.SerializerMethodField()
+
+    def get_sounds(self, obj):
+        return prepend_base(
+            reverse("apiv2-collection-sound-list", args=[obj.id]),
+            request_is_secure=self.context["request"].is_secure(),
         )
 
     username = serializers.SerializerMethodField()

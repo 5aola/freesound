@@ -18,12 +18,14 @@
 #     See AUTHORS file.
 #
 
+from collections import Counter
+from functools import cached_property
 from urllib.parse import quote
 
 from django.contrib.auth.models import User
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
-from django.db.models import F, Sum
+from django.db.models import Avg, Count, F, Sum
 from django.db.models.functions import Greatest
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
@@ -32,7 +34,8 @@ from django.urls import reverse
 from django.utils.text import slugify
 
 from freesound import settings
-from sounds.models import License, Sound
+from sounds.models import License, Sound, get_license_summary
+from utils.cache import invalidate_template_cache
 
 
 class Collection(models.Model):
@@ -124,12 +127,50 @@ class Collection(models.Model):
         result = Sound.objects.bulk_sounds_for_collection(self.id).aggregate(total_duration=Sum("duration"))
         return result["total_duration"] or 0
 
+    @cached_property
+    def _rating_stats(self):
+        # Average and count over the collection sounds that have enough ratings to be counted
+        return (
+            Sound.objects.bulk_sounds_for_collection(self.id)
+            .filter(num_ratings__gte=settings.MIN_NUMBER_RATINGS)
+            .aggregate(avg=Avg("avg_rating"), count=Count("id"))
+        )
+
+    @property
+    def avg_rating(self):
+        # Average rating (0-10 scale), like packs
+        return self._rating_stats["avg"] or 0
+
+    @property
+    def num_ratings(self):
+        return self._rating_stats["count"]
+
+    def get_collection_tags(self, limit=15):
+        # Most common tags across the collection sounds, for a visual (non-clickable) summary
+        tags = [
+            ti.name
+            for sound in Sound.objects.bulk_sounds_for_collection(self.id).prefetch_related("tags")
+            for ti in sound.tags.all()
+        ]
+        return [{"name": name, "count": count} for name, count in Counter(tags).most_common(limit)]
+
+    @cached_property
+    def license_summary(self):
+        pairs = Sound.objects.bulk_sounds_for_collection(self.id).values_list("license_id", "license__name")
+        license_ids = [license_id for license_id, _ in pairs]
+        license_names = [license_name for _, license_name in pairs]
+        return get_license_summary(license_ids, license_names, "collection")
+
+    def invalidate_template_caches(self):
+        invalidate_template_cache("bw_collection_stats", self.id)
+
     def save(self, *args, **kwargs):
         # Update num_sounds count
         if self.pk:
             self.num_sounds = Sound.objects.bulk_sounds_for_collection(self.id).count()
 
         super().save(*args, **kwargs)
+        self.invalidate_template_caches()
 
 
 class CollectionSound(models.Model):
@@ -157,6 +198,7 @@ def update_collection_num_sounds(sender, instance, **kwargs):
     if instance and instance.collection_id:
         num_sounds = Sound.objects.bulk_sounds_for_collection(instance.collection_id).count()
         Collection.objects.filter(id=instance.collection_id).update(num_sounds=num_sounds)
+        invalidate_template_cache("bw_collection_stats", instance.collection_id)
 
 
 @receiver(post_delete, sender=CollectionSound)
@@ -205,10 +247,12 @@ class CollectionDownloadSound(models.Model):
 @receiver(post_save, sender=CollectionDownload)
 def update_collection_downloads(sender, instance, **kwargs):
     if instance:
-        Collection.objects.filter(id=instance.collection.id).update(num_downloads=Greatest(F("num_downloads") + 1, 0))
+        Collection.objects.filter(id=instance.collection_id).update(num_downloads=Greatest(F("num_downloads") + 1, 0))
+        invalidate_template_cache("bw_collection_stats", instance.collection_id)
 
 
 @receiver(post_delete, sender=CollectionDownload)
 def update_collection_downloads_on_delete(sender, instance, **kwargs):
     if instance:
-        Collection.objects.filter(id=instance.collection.id).update(num_downloads=Greatest(F("num_downloads") - 1, 0))
+        Collection.objects.filter(id=instance.collection_id).update(num_downloads=Greatest(F("num_downloads") - 1, 0))
+        invalidate_template_cache("bw_collection_stats", instance.collection_id)

@@ -56,6 +56,11 @@ urlpatterns = [
         accounts.views.account_latest_packs_section,
         name="account-latest-packs-section",
     ),
+    path(
+        "people/<username>/section/latest_collections/",
+        accounts.views.account_latest_collections_section,
+        name="account-latest-collections-section",
+    ),
     path("people/<username>/sounds/", sounds.views.for_user, name="sounds-for-user"),
     path("people/<username>/flag/", accounts.views.flag_user, name="flag-user"),
     path("people/<username>/clear_flags/", accounts.views.clear_flags_user, name="clear-flags-user"),

@@ -148,6 +148,7 @@
             <ol>
                 <li class="active" data-toggle="tap" data-target="#sounds">Latest sounds</li>
                 <li data-toggle="tap" data-target="#packs">Latest packs</li>
+                <li data-toggle="tap" data-target="#collections">Latest collections</li>
                 {% comment %}<li data-toggle="tap" data-target="#tapDownloaded">Downloads</li>{% endcomment %}
             </ol>
         </div>
@@ -176,6 +177,12 @@
                 <div class="bw-profile__tap_container" id="packs">
                     <div class="async-section"
                         data-async-section-content-url="{% url 'account-latest-packs-section' user.username %}?ajax=1">
+                        <img width="12px" height="12px" src="{% static 'bw-frontend/public/bw_indicator.gif' %}">
+                    </div>
+                </div>
+                <div class="bw-profile__tap_container" id="collections">
+                    <div class="async-section"
+                        data-async-section-content-url="{% url 'account-latest-collections-section' user.username %}?ajax=1">
                         <img width="12px" height="12px" src="{% static 'bw-frontend/public/bw_indicator.gif' %}">
                     </div>
                 </div>

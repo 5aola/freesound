@@ -284,6 +284,22 @@ examples = {
     "DownloadPack": [
         ("Download a pack", ["curl -H \"Authorization: Bearer {{access_token}}\" '%s/apiv2/packs/9678/download/'"]),
     ],
+    # Collections
+    "UserCollections": [
+        ("Getting user collections", ["apiv2/users/reinsamba/collections/"]),
+    ],
+    "CollectionInstance": [
+        ("Getting a collection", ["apiv2/collections/1/"]),
+    ],
+    "CollectionSounds": [
+        ("Getting collection sounds", ["apiv2/collections/1/sounds/", "apiv2/collections/1/sounds/?fields=id,name"]),
+    ],
+    "DownloadCollection": [
+        (
+            "Download a collection",
+            ["curl -H \"Authorization: Bearer {{access_token}}\" '%s/apiv2/collections/1/download/'"],
+        ),
+    ],
     # Me
     "MeBookmarkCategories": [
         (
@@ -302,6 +318,12 @@ examples = {
                 "curl -H \"Authorization: Bearer {{access_token}}\" '%s/apiv2/me/bookmark_categories/11819/sounds/'",
                 "curl -H \"Authorization: Bearer {{access_token}}\" '%s/apiv2/me/bookmark_categories/11819/sounds/?fields=duration,previews'",
             ],
+        ),
+    ],
+    "MeCollections": [
+        (
+            "Users collections",
+            ["curl -H \"Authorization: Bearer {{access_token}}\" '%s/apiv2/me/collections/'"],
         ),
     ],
 }

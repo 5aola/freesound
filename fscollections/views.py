@@ -38,6 +38,7 @@ from fscollections.forms import (
     MaintainerForm,
     SelectCollectionOrNewCollectionForm,
 )
+from follow import follow_utils
 from fscollections.models import Collection, CollectionDownload, CollectionDownloadSound, CollectionSound
 from sounds.models import Sound
 from sounds.views import add_sounds_modal_helper
@@ -70,6 +71,7 @@ def collection(request, collection):
     user = request.user
     is_maintainer = collection.maintainers.filter(username=user.username).exists()
     is_owner = user == collection.user
+    is_following = user.is_authenticated and follow_utils.is_user_following_user(user, collection.user)
     maintainers = collection.maintainers.all()
 
     sort_key = request.GET.get("s") or settings.COLLECTION_SORT_DEFAULT
@@ -103,6 +105,7 @@ def collection(request, collection):
         "collection": collection,
         "is_owner": is_owner,
         "is_maintainer": is_maintainer,
+        "is_following": is_following,
         "maintainers": maintainers,
         "sort_options": settings.COLLECTION_SORT_OPTIONS,
         "page_sounds": page_sounds,

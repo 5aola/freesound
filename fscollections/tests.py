@@ -1,13 +1,14 @@
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.messages import get_messages
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 from django.utils.text import slugify
 
 from fscollections.models import Collection, CollectionDownloadSound, CollectionSound
 from fscollections.views import serialize_collection_sounds
-from sounds.models import Sound
+from sounds.models import License, Sound
 from utils.test_helpers import create_user_and_sounds
 
 
@@ -571,3 +572,101 @@ class CollectionTest(TestCase):
         self.assertEqual(
             1, CollectionDownloadSound.objects.filter(collection_download__collection=self.collection).count()
         )
+
+    def _add_sound_ok(self, sound):
+        return CollectionSound.objects.create(user=self.user, sound=sound, collection=self.collection, status="OK")
+
+    def test_avg_rating_and_num_ratings(self):
+        # Only sounds with enough ratings are averaged/counted
+        self._add_sound_ok(self.sound)
+        self._add_sound_ok(self.sound1)
+        self._add_sound_ok(self.sound2)
+        Sound.objects.filter(id=self.sound.id).update(num_ratings=settings.MIN_NUMBER_RATINGS + 2, avg_rating=8)
+        Sound.objects.filter(id=self.sound1.id).update(num_ratings=settings.MIN_NUMBER_RATINGS, avg_rating=6)
+        Sound.objects.filter(id=self.sound2.id).update(num_ratings=settings.MIN_NUMBER_RATINGS - 1, avg_rating=10)
+
+        collection = Collection.objects.get(id=self.collection.id)
+        self.assertEqual(2, collection.num_ratings)
+        self.assertAlmostEqual(7.0, collection.avg_rating)
+
+    def test_license_summary_single_license(self):
+        # All helper sounds share the same license
+        license = License.objects.last()
+        self._add_sound_ok(self.sound)
+        self._add_sound_ok(self.sound1)
+        summary = Collection.objects.get(id=self.collection.id).license_summary
+        self.assertEqual(license.name, summary.name)
+        self.assertEqual(license.id, summary.id)
+        self.assertEqual(license.deed_url, summary.deed_url)
+
+    def test_license_summary_various_licenses(self):
+        other_license = License.objects.exclude(id=self.sound.license_id).first()
+        Sound.objects.filter(id=self.sound1.id).update(license=other_license)
+        self._add_sound_ok(self.sound)
+        self._add_sound_ok(self.sound1)
+        summary = Collection.objects.get(id=self.collection.id).license_summary
+        self.assertEqual("Various licenses", summary.name)
+        self.assertIsNone(summary.id)
+        self.assertEqual("", summary.deed_url)
+
+    def test_get_collection_tags(self):
+        self.sound.set_tags(["ambient", "field"])
+        self.sound1.set_tags(["ambient", "loop"])
+        self._add_sound_ok(self.sound)
+        self._add_sound_ok(self.sound1)
+        tags = Collection.objects.get(id=self.collection.id).get_collection_tags()
+        counts = {tag["name"]: tag["count"] for tag in tags}
+        self.assertEqual(2, counts["ambient"])
+        self.assertEqual(1, counts["field"])
+        self.assertEqual(1, counts["loop"])
+        self.assertEqual("ambient", tags[0]["name"])  # most common first
+
+    def test_num_public_collections_counts_only_public_owned(self):
+        # setUp already created one private collection ("testcollection") owned by self.user
+        Collection.objects.create(user=self.user, name="public-collection", public=True)
+        Collection.objects.create(user=self.user, name="another-private-collection")
+        # A public collection owned by a different user must not be counted
+        Collection.objects.create(user=self.external_user, name="other-user-public", public=True)
+
+        self.assertEqual(1, self.user.profile.num_public_collections)
+        stats = self.user.profile.get_stats_for_profile_page()
+        self.assertEqual(1, stats["num_collections"])
+
+    def test_get_latest_collections_for_profile_page_public_owned_only(self):
+        # setUp already created one private collection ("testcollection") owned by self.user
+        public = Collection.objects.create(user=self.user, name="public-collection", public=True)
+        Collection.objects.create(user=self.external_user, name="other-user-public", public=True)
+
+        latest = list(self.user.profile.get_latest_collections_for_profile_page())
+        self.assertEqual([public.id], [c.id for c in latest])
+
+    def test_latest_collections_section_endpoint(self):
+        Collection.objects.create(user=self.user, name="public-collection", public=True)
+
+        # Only accessible via ajax
+        resp = self.client.get(reverse("account-latest-collections-section", args=[self.user.username]))
+        self.assertEqual(404, resp.status_code)
+
+        resp = self.client.get(
+            reverse("account-latest-collections-section", args=[self.user.username]) + "?ajax=1"
+        )
+        self.assertEqual(200, resp.status_code)
+        self.assertContains(resp, "public-collection")
+        # The private collection from setUp must not be shown
+        self.assertNotContains(resp, "testcollection")
+
+    def test_collection_page_renders_stats_synchronously(self):
+        cache.clear()
+        self.sound.set_tags(["ambient", "field"])
+        Sound.objects.filter(id=self.sound.id).update(num_ratings=settings.MIN_NUMBER_RATINGS + 1, avg_rating=8)
+        self._add_sound_ok(self.sound)
+        license = License.objects.last()
+
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse("collection", args=[self.collection.id, slugify(self.collection.name)]))
+        self.assertEqual(200, resp.status_code)
+        # Stats are rendered inline (no async-section placeholder), including rating, tags and license
+        self.assertNotContains(resp, "async-section")
+        self.assertContains(resp, "ambient")
+        self.assertContains(resp, "overall rating")
+        self.assertContains(resp, license.name)

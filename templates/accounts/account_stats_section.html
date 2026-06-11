@@ -8,6 +8,14 @@
         {% bw_icon 'stack' 'text-light-grey' %} <a class="text-19 bw-link--black" title="{{ user.username }} has created {{ user_stats.num_packs|bw_intcomma }} pack{{ user_stats.num_packs|pluralize }}" href="{{ user.profile.get_user_packs_in_search_url }}">{{ user_stats.num_packs|formatnumber }} pack{{ user_stats.num_packs|pluralize }}</a>
     </li>
     <li class="v-spacing-3">
+        {% bw_icon 'bookmark' 'text-light-grey' %}
+        {% if is_own_profile %}
+        <a class="text-19 bw-link--black" title="You have {{ user_stats.num_collections|bw_intcomma }} collection{{ user_stats.num_collections|pluralize }}" href="{% url 'your-collections' %}">{{ user_stats.num_collections|formatnumber }} collection{{ user_stats.num_collections|pluralize }}</a>
+        {% else %}
+        <span class="text-19" title="{{ user.username }} has {{ user_stats.num_collections|bw_intcomma }} public collection{{ user_stats.num_collections|pluralize }}">{{ user_stats.num_collections|formatnumber }} collection{{ user_stats.num_collections|pluralize }}</span>
+        {% endif %}
+    </li>
+    <li class="v-spacing-3">
         {% bw_icon 'clock' 'text-light-grey' %} <span class="text-19" title="{{ user.username }}'s sounds together account for {{ user_stats.total_uploaded_sounds_length|smart_duration_with_units }} of audio">{{ user_stats.total_uploaded_sounds_length|smart_duration_with_units }}</span>
     </li>
     <li class="v-spacing-3">

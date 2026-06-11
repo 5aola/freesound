@@ -1404,9 +1404,11 @@ def account_stats_section(request, username):
     if not request.GET.get("ajax"):
         raise Http404  # Only accessible via ajax
     user = get_parameter_user_or_404(request)
+    is_own_profile = request.user.is_authenticated and request.user == user
     tvars = {
         "user": user,
-        "user_stats": user.profile.get_stats_for_profile_page(),
+        "user_stats": user.profile.get_stats_for_profile_page(include_private=is_own_profile),
+        "is_own_profile": is_own_profile,
     }
     return render(request, "accounts/account_stats_section.html", tvars)
 
@@ -1423,6 +1425,21 @@ def account_latest_packs_section(request, username):
         # if there is no cache available
     }
     return render(request, "accounts/account_latest_packs_section.html", tvars)
+
+
+@redirect_if_old_username
+def account_latest_collections_section(request, username):
+    if not request.GET.get("ajax"):
+        raise Http404  # Only accessible via ajax
+
+    user = get_parameter_user_or_404(request)
+    is_own_profile = request.user.is_authenticated and request.user == user
+    tvars = {
+        "user": user,
+        "latest_collections": user.profile.get_latest_collections_for_profile_page(include_private=is_own_profile),
+        "is_own_profile": is_own_profile,
+    }
+    return render(request, "accounts/account_latest_collections_section.html", tvars)
 
 
 def handle_uploaded_file(user_id, f):

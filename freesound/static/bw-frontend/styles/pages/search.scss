@@ -181,8 +181,21 @@
 }
 
 .tag-container {
-  &:hover {
+  &:not(.tag-not-clickable):hover {
     opacity: 1;
+  }
+}
+
+// Tags rendered as visual-only labels (clickable=False) keep their resting
+// appearance: no hover state change for opacity, background or text color.
+.tag-not-clickable {
+  cursor: default;
+
+  &.btn-inverse:hover:not(:disabled),
+  &.btn-inverse:focus:not(:disabled),
+  &.btn-inverse:active:not(:disabled) {
+    background-color: transparent;
+    color: $black;
   }
 }
 

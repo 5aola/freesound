@@ -42,11 +42,12 @@ def bw_icon(name, class_name=""):
 
 
 @register.inclusion_tag("atoms/tag.html")
-def bw_tag(tag_name, size=1, class_name="", url=None, weight=None):
+def bw_tag(tag_name, size=1, class_name="", url=None, weight=None, clickable=True):
     """
-    Displays a BW tag with the given name
+    Displays a BW tag with the given name. When ``clickable`` is False the tag is rendered as a
+    non-navigable label (no link), e.g. for a visual-only tags summary.
     """
-    if url is None:
+    if clickable and url is None:
         url = reverse("tags", args=[tag_name])
     if weight is None:
         opacity_class = "opacity-050"
@@ -61,6 +62,7 @@ def bw_tag(tag_name, size=1, class_name="", url=None, weight=None):
         "class_name": class_name,
         "line_height_class": line_height_class,
         "url": url,
+        "clickable": clickable,
         "opacity_class": opacity_class,
     }
 

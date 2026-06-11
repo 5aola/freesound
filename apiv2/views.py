@@ -32,6 +32,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.db import IntegrityError
+from django.db.models import Q
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
@@ -66,6 +67,7 @@ from apiv2.forms import (
 from apiv2.models import ApiV2Client
 from apiv2.serializers import (
     BookmarkCategorySerializer,
+    CollectionSerializer,
     CreateBookmarkSerializer,
     CreateCommentSerializer,
     CreateRatingSerializer,
@@ -81,6 +83,7 @@ from apiv2.serializers import (
 )
 from bookmarks.models import Bookmark, BookmarkCategory
 from comments.models import Comment
+from fscollections.models import Collection
 from geotags.models import GeoTag
 from ratings.models import SoundRating
 from sounds.models import License, Pack, Sound
@@ -958,6 +961,145 @@ class DownloadPack(DownloadAPIView):
 
 
 ##################
+# COLLECTION VIEWS
+##################
+
+
+def get_visible_collection_or_404(view, collection_id):
+    """Return the requested collection if the requesting user is allowed to see it, otherwise raise NotFoundException.
+
+    A collection is visible when it is public, or when the authenticated end user is its owner or one of its
+    maintainers. Non-visible collections raise a 404 (rather than a 403) so that the API does not disclose the
+    existence of private collections. Note that ``view.user`` is only populated for OAuth2 and Session
+    authentication; for token (API key) authentication it is ``None`` and only public collections are visible.
+    """
+    try:
+        collection = Collection.objects.select_related("user").get(id=collection_id)
+    except Collection.DoesNotExist:
+        raise NotFoundException(resource=view)
+
+    if collection.public:
+        return collection
+
+    user = view.user
+    if user is not None and (
+        collection.user_id == user.id or collection.maintainers.filter(id=user.id).exists()
+    ):
+        return collection
+
+    raise NotFoundException(resource=view)
+
+
+class CollectionInstance(RetrieveAPIView):
+    serializer_class = CollectionSerializer
+
+    @classmethod
+    def get_description(cls):
+        return (
+            "Detailed collection information."
+            '<br>Full documentation can be found <a href="%s/%s" target="_blank">here</a>. %s'
+            % (
+                prepend_base("/docs/api"),
+                "%s#collection-instance" % resources_doc_filename,
+                get_formatted_examples_for_view("CollectionInstance", "apiv2-collection-instance", max=5),
+            )
+        )
+
+    def get(self, request, *args, **kwargs):
+        api_logger.info(self.log_message("collection:%i instance" % (int(kwargs["pk"]))))
+        return super().get(request, *args, **kwargs)
+
+    def get_object(self):
+        return get_visible_collection_or_404(self, self.kwargs["pk"])
+
+
+class CollectionSounds(ListAPIView):
+    serializer_class = SoundListSerializer
+
+    @classmethod
+    def get_description(cls):
+        return (
+            "Sounds included in a collection."
+            '<br>Full documentation can be found <a href="%s/%s" target="_blank">here</a>. %s'
+            % (
+                prepend_base("/docs/api"),
+                "%s#collection-sounds" % resources_doc_filename,
+                get_formatted_examples_for_view("CollectionSounds", "apiv2-collection-sound-list", max=5),
+            )
+        )
+
+    def get(self, request, *args, **kwargs):
+        api_logger.info(self.log_message("collection:%i sounds" % (int(kwargs["pk"]))))
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        collection = get_visible_collection_or_404(self, self.kwargs["pk"])
+        needs_analyzers_output = get_needed_audio_descriptors(self.request.GET.get("fields", ""))
+        needs_similarity_vectors = get_needed_similarity_vectors(self.request.GET.get("fields", ""))
+        include_remix_subqueries = get_include_remix_subqueries(self.request.GET.get("fields", ""))
+        queryset = Sound.objects.bulk_sounds_for_collection(
+            collection_id=collection.id,
+            include_audio_descriptors=needs_analyzers_output,
+            include_similarity_vectors=needs_similarity_vectors,
+            include_remix_subqueries=include_remix_subqueries,
+        )
+        return queryset
+
+
+class UserCollections(ListAPIView):
+    serializer_class = CollectionSerializer
+
+    @classmethod
+    def get_description(cls):
+        return (
+            "Public collections created by a user."
+            '<br>Full documentation can be found <a href="%s/%s" target="_blank">here</a>. %s'
+            % (
+                prepend_base("/docs/api"),
+                "%s#user-collections" % resources_doc_filename,
+                get_formatted_examples_for_view("UserCollections", "apiv2-user-collections", max=5),
+            )
+        )
+
+    def get(self, request, *args, **kwargs):
+        api_logger.info(self.log_message(f"user:{self.kwargs['username']} collections"))
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        try:
+            user = User.objects.get(username=self.kwargs["username"], is_active=True)
+        except User.DoesNotExist:
+            raise NotFoundException(resource=self)
+        return Collection.objects.filter(user=user, public=True).select_related("user").order_by("-created")
+
+
+class DownloadCollection(DownloadAPIView):
+    @classmethod
+    def get_description(cls):
+        return (
+            'Download a collection.<br>Full documentation can be found <a href="%s/%s" target="_blank">here</a>. %s'
+            % (
+                prepend_base("/docs/api"),
+                "%s#download-collection-oauth2-required" % resources_doc_filename,
+                get_formatted_examples_for_view("DownloadCollection", "apiv2-collection-download", max=5),
+            )
+        )
+
+    def get(self, request, *args, **kwargs):
+        collection_id = kwargs["pk"]
+        api_logger.info(self.log_message("collection:%i download" % (int(collection_id))))
+        collection = get_visible_collection_or_404(self, collection_id)
+        sounds_list = Sound.objects.bulk_sounds_for_collection(collection.id).select_related("user", "license")
+        if not sounds_list:
+            raise NotFoundException(
+                msg="Collection %i has no sounds that can be downloaded" % int(collection_id), resource=self
+            )
+        licenses_url = reverse("collection-licenses", kwargs=collection.url_kwargs)
+        licenses_content = collection.get_attribution(sound_qs=sounds_list)
+        return download_sounds(licenses_url, licenses_content, sounds_list, collection.download_filename)
+
+
+##################
 # READ WRITE VIEWS
 ##################
 
@@ -1448,6 +1590,7 @@ class Me(OauthRequiredAPIView):
                     "email": self.user.profile.get_email_for_delivery(),
                     "unique_id": self.user.id,
                     "bookmark_categories": prepend_base(reverse("apiv2-me-bookmark-categories")),
+                    "collections": prepend_base(reverse("apiv2-me-collections")),
                 }
             )
             return Response(response_data, status=status.HTTP_200_OK)
@@ -1542,6 +1685,36 @@ class MeBookmarkCategorySounds(OauthRequiredAPIView, ListAPIView):
             raise ServerErrorException(resource=self)
 
 
+class MeCollections(OauthRequiredAPIView, ListAPIView):
+    serializer_class = CollectionSerializer
+
+    @classmethod
+    def get_description(cls):
+        return (
+            "Collections owned or maintained by the logged in user."
+            '<br>Full documentation can be found <a href="%s/%s" target="_blank">here</a>. %s'
+            % (
+                prepend_base("/docs/api"),
+                "%s#me-collections" % resources_doc_filename,
+                get_formatted_examples_for_view("MeCollections", "apiv2-me-collections", max=5),
+            )
+        )
+
+    def get(self, request, *args, **kwargs):
+        api_logger.info(self.log_message(f"user:{self.user.username} collections"))
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        if not self.user:
+            raise ServerErrorException(resource=self)
+        return (
+            Collection.objects.filter(Q(user=self.user) | Q(maintainers=self.user))
+            .select_related("user")
+            .distinct()
+            .order_by("-modified")
+        )
+
+
 class FreesoundApiV2Resources(GenericAPIView):
     @classmethod
     def get_description(cls):
@@ -1632,6 +1805,10 @@ class FreesoundApiV2Resources(GenericAPIView):
                                 reverse("apiv2-user-packs", args=["uname"]).replace("uname", "<username>"),
                                 request_is_secure=request.is_secure(),
                             ),
+                            "04 User collections": prepend_base(
+                                reverse("apiv2-user-collections", args=["uname"]).replace("uname", "<username>"),
+                                request_is_secure=request.is_secure(),
+                            ),
                         }.items(),
                         key=lambda t: t[0],
                     )
@@ -1658,6 +1835,26 @@ class FreesoundApiV2Resources(GenericAPIView):
                 )
             },
             {
+                "Collection resources": OrderedDict(
+                    sorted(
+                        {
+                            "01 Collection instance": prepend_base(
+                                reverse("apiv2-collection-instance", args=[0]).replace("0", "<collection_id>"),
+                                request_is_secure=request.is_secure(),
+                            ),
+                            "02 Collection sounds": prepend_base(
+                                reverse("apiv2-collection-sound-list", args=[0]).replace("0", "<collection_id>"),
+                                request_is_secure=request.is_secure(),
+                            ),
+                            "03 Download collection": prepend_base(
+                                reverse("apiv2-collection-download", args=[0]).replace("0", "<collection_id>")
+                            ),
+                        }.items(),
+                        key=lambda t: t[0],
+                    )
+                )
+            },
+            {
                 "Other resources": OrderedDict(
                     sorted(
                         {
@@ -1669,6 +1866,7 @@ class FreesoundApiV2Resources(GenericAPIView):
                                 reverse("apiv2-me-bookmark-category-sounds", args=[0]).replace("0", "<category_id>"),
                                 request_is_secure=request.is_secure(),
                             ),
+                            "04 My collections": prepend_base(reverse("apiv2-me-collections")),
                         }.items(),
                         key=lambda t: t[0],
                     )

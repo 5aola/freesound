@@ -252,6 +252,15 @@ class Profile(models.Model):
         )
         return Pack.objects.ordered_ids(pack_ids=latest_pack_ids)
 
+    def get_latest_collections_for_profile_page(self, include_private=False):
+        # Only public collections owned by the user are shown on the public profile page. When the profile owner is
+        # viewing their own page (include_private=True), their private collections are shown as well.
+        from fscollections.models import Collection
+        collections = Collection.objects.filter(user=self.user)
+        if not include_private:
+            collections = collections.filter(public=True)
+        return collections.select_related("user").order_by("-modified")[0:15]
+
     @staticmethod
     def locations_static(user_id, has_avatar):
         id_folder = str(user_id // 1000)
@@ -664,13 +673,27 @@ class Profile(models.Model):
         # Return the number of packs for which at least one sound has been published
         return Sound.public.filter(user=self.user).exclude(pack=None).order_by("pack_id").distinct("pack").count()
 
-    def get_stats_for_profile_page(self):
+    @property
+    def num_public_collections(self):
+        # Number of public collections owned by the user (shown in the profile stats section)
+        from fscollections.models import Collection
+        return Collection.objects.filter(user=self.user, public=True).count()
+
+    @property
+    def num_all_collections(self):
+        # Number of collections owned by the user, including private ones (shown to the profile owner)
+        from fscollections.models import Collection
+        return Collection.objects.filter(user=self.user).count()
+
+    def get_stats_for_profile_page(self, include_private=False):
         # Return a dictionary of user statistics to show on the user profile page
-        # Because some stats are expensive to compute, we cache them
+        # Because some stats are expensive to compute, we cache them. When the profile owner is viewing their own
+        # page (include_private=True), private collections are counted as well.
         stats_from_db = {
             "num_sounds": self.num_sounds,
             "num_downloads": self.num_downloads_on_sounds_and_packs,
             "num_posts": self.num_posts,
+            "num_collections": self.num_all_collections if include_private else self.num_public_collections,
         }
         stats_from_cache = cache.get(settings.USER_STATS_CACHE_KEY.format(self.user_id), None)
         if stats_from_cache is None:
