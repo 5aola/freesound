@@ -64,6 +64,7 @@ from tickets.models import Ticket, TicketComment
 from utils.cache import invalidate_user_template_caches
 from utils.cdn import generate_cdn_download_url
 from utils.downloads import download_sounds, should_suggest_donation
+from utils.editable_sound_grid import editable_sound_grid_context
 from utils.mail import send_mail_template, send_mail_template_to_support
 from utils.nginxsendfile import prepare_sendfile_arguments_for_sound_download, sendfile
 from utils.pagination import paginate
@@ -784,17 +785,29 @@ def edit_and_describe_sounds_helper(request, describing=False, session_key_prefi
     return render(request, "sounds/edit_and_describe.html", tvars)
 
 
+def pack_sounds_grid_context(request, pack):
+    """Editable grid context for the pack edit page (see utils.editable_sound_grid)."""
+    own_sounds = Sound.objects.filter(user=pack.user, moderation_state="OK", processing_state="OK")
+    saved_sounds_meta = [
+        {"id": sid, "name": name, "username": pack.user.username, "date_added": created}
+        for sid, name, created in own_sounds.filter(pack=pack).values_list("id", "original_filename", "created")
+    ]
+    return editable_sound_grid_context(request, saved_sounds_meta, addable_sounds_qs=own_sounds, object_name="pack")
+
+
 @login_required
 def pack_edit(request, username, pack_id):
     pack = get_object_or_404(Pack, id=pack_id)
     if pack.user.username.lower() != username.lower():
         raise Http404
-    pack_sounds = ",".join([str(s.id) for s in pack.sounds.all()])
 
     if not (request.user.has_perm("pack.can_change") or pack.user == request.user):
         raise PermissionDenied
 
-    current_sounds = list()
+    if request.method == "GET" and request.headers.get("HX-Request"):
+        # Grid refresh (search/sort/pagination/modal add) with the pending delta applied
+        return render(request, "molecules/editable_sound_grid_content.html", pack_sounds_grid_context(request, pack))
+
     if request.method == "POST":
         form = PackEditForm(request.POST, instance=pack, label_suffix="")
         if form.is_valid():
@@ -808,17 +821,14 @@ def pack_edit(request, username, pack_id):
                 redirect_to = request.GET.get("next", pack.get_absolute_url())
                 return HttpResponseRedirect(redirect_to)
     else:
-        form = PackEditForm(instance=pack, initial=dict(pack_sounds=pack_sounds), label_suffix="")
-        current_sounds = Sound.objects.bulk_sounds_for_pack(pack_id=pack.id)
-        form.pack_sound_objects = current_sounds
-    if request.method == "POST":
-        current_sounds = Sound.objects.bulk_sounds_for_pack(pack_id=pack.id)
-        form.pack_sound_objects = current_sounds
+        form = PackEditForm(instance=pack, label_suffix="")
     tvars = {
         "pack": pack,
         "form": form,
-        "current_sounds": current_sounds,
+        "add_sounds_modal_url": reverse("add-sounds-modal-pack", args=[pack.id]),
     }
+    # On a POST with errors the grid re-renders with the submitted (still pending) delta
+    tvars.update(pack_sounds_grid_context(request, pack))
     return render(request, "sounds/pack_edit.html", tvars)
 
 
@@ -827,25 +837,21 @@ def sound_edit_sources(request, username, sound_id):
     return HttpResponseRedirect(reverse("sound-edit", args=[username, sound_id]))
 
 
-def add_sounds_modal_helper(request, username=None):
+def add_sounds_modal_helper(request, username=None, exclude_ids=None):
     tvars = {"sounds_to_select": [], "q": request.GET.get("q", ""), "search_executed": False}
     if request.GET.get("q", None) is not None:
         tvars["search_executed"] = True
-        exclude_sound_ids = request.GET.get("exclude", "")
+        # Merge view-provided exclusions (e.g. saved grid members) with the client's pending-added ids
+        exclude = [str(sid) for sid in exclude_ids or []]
+        exclude += [sid for sid in request.GET.get("exclude", "").split(",") if sid.isdigit()]
         if request.GET["q"] != "" or username is not None:
             query = request.GET["q"]
-            query_filter = ""
-            if username is not None or exclude_sound_ids is not None:
-                filter_parts = []
-                if username is not None:
-                    filter_parts.append(f"username:{username}")
-                if exclude_sound_ids:
-                    exclude_parts = []
-                    for sound_id in exclude_sound_ids.split(","):
-                        exclude_parts.append(f"id:{sound_id}")
-                    exclude_part = "NOT (" + " OR ".join(exclude_parts) + ")"
-                    filter_parts.append(exclude_part)
-                query_filter = " AND ".join(filter_parts)
+            filter_parts = []
+            if username is not None:
+                filter_parts.append(f"username:{username}")
+            if exclude:
+                filter_parts.append("NOT (" + " OR ".join(f"id:{sid}" for sid in exclude) + ")")
+            query_filter = " AND ".join(filter_parts)
             results, _ = perform_search_engine_query(
                 {"textual_query": query, "query_filter": query_filter, "num_sounds": 9}
             )
@@ -856,7 +862,10 @@ def add_sounds_modal_helper(request, username=None):
 @login_required
 def add_sounds_modal_for_pack_edit(request, pack_id):
     pack = get_object_or_404(Pack, id=pack_id)
-    tvars = add_sounds_modal_helper(request, username=pack.user.username)
+    # Saved members are excluded here; the client only sends its pending-added ids
+    tvars = add_sounds_modal_helper(
+        request, username=pack.user.username, exclude_ids=pack.sounds.values_list("id", flat=True)
+    )
     tvars.update(
         {
             "modal_title": "Add sounds to pack",

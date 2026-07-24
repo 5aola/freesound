@@ -1,8 +1,5 @@
 {% extends "simple_page.html" %}
 {% load static %}
-{% load util %}
-{% load bw_templatetags %}
-{% load sounds_selector %}
 
 {% block title %}Edit pack - {{ pack.name }}{% endblock %}
 {% block page-title %}Edit pack{% endblock %}
@@ -16,7 +13,7 @@
 <div class="row no-gutters">
     <div class="col-lg-8 offset-lg-2">
         <h2 class="v-spacing-3">{{ pack.name }}</h2>
-        <form class="bw-form disable-on-submit" method="post" novalidate>{% csrf_token %}
+        <form class="bw-form disable-on-submit do-not-submit-on-enter" method="post" novalidate>{% csrf_token %}
             {{ form.non_field_errors }}
             {{ form.name.errors }}
             {{ form.name.label_tag }}
@@ -25,14 +22,11 @@
             {{ form.description.label_tag }}
             {{ form.description }}
             <span class="helptext">{{ form.description.help_text|safe }}</span>
-            <div class="select-sounds-field v-spacing-5">
-                {{ form.pack_sounds }}
-                <label>Sounds in pack (<span id="element-count">{{ form.pack_sound_objects|length }}</span>)</label>
-                {% sounds_selector form.pack_sound_objects %}
-                <div class="between v-spacing-top-4">
-                    <button class="btn-inverse" data-toggle="add-sounds-modal" data-selected-sounds-hidden-input-id="{{ form.pack_sounds.id_for_label }}" data-modal-url="{% url 'add-sounds-modal-pack' pack.id %}">{% bw_icon 'plus' %}Add sounds</button>
-                    <button class="btn-inverse">{% bw_icon 'trash' %}Remove selected sounds from pack</button>
-                </div>
+            <div class="v-spacing-5 v-spacing-top-4">
+                {{ form.added_sounds }}
+                {{ form.removed_sounds }}
+                <div>{{ form.added_sounds.errors }}{{ form.removed_sounds.errors }}</div>
+                {% include "molecules/editable_sound_grid.html" %}
             </div>
             <button class="btn-primary w-100">Save pack</button>
         </form>

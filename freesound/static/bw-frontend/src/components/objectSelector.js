@@ -127,37 +127,8 @@ const updateActionUI = (container, actionName, isActive) => {
   btn.blur();
 };
 
-const initializeObjectSelectorActions = (parentElement, store) => {
-  const containers = parentElement.querySelectorAll(
-    '.bw-selectable-object.with-actions'
-  );
-  containers.forEach(container => {
-    if (container.dataset.actionsInitialized) return;
-    container.dataset.actionsInitialized = 'true';
-
-    const objectId = parseInt(container.dataset.objectId, 10);
-
-    // Restore persisted state for all registered actions
-    store.actionNames.forEach(name => {
-      updateActionUI(container, name, store.has(objectId, name));
-    });
-
-    // Bind action buttons identified by data-action attribute
-    container.querySelectorAll('[data-action]').forEach(btn => {
-      btn.addEventListener('click', evt => {
-        evt.preventDefault();
-        const nowActive = store.toggleAction(objectId, btn.dataset.action);
-        if (nowActive !== undefined) {
-          updateActionUI(container, btn.dataset.action, nowActive);
-        }
-      });
-    });
-  });
-};
-
 export {
   initializeObjectSelector,
   updateObjectSelectorDataProperties,
-  initializeObjectSelectorActions,
   updateActionUI,
 };

@@ -1,0 +1,34 @@
+{% load bw_templatetags %}
+{# Editable sound grid (collection/pack edit): the server renders the grid with the pending  #}
+{# delta (added/removed/featured sounds) baked into the cards. State lives in the page form's #}
+{# hidden inputs ([data-delta="..."]) and travels with every grid refresh request.            #}
+{# See editableSoundGrid.js and utils/editable_sound_grid.py.                                 #}
+<div data-editable-sound-grid{% if max_featured %} data-max-featured="{{ max_featured }}"{% endif %}>
+    <div class="between middle no-gutters">
+        <div class="no-wrap">
+            <label>Sounds in {{ grid_object_name }} (<span data-grid-count>{{ present_count }}</span>)</label>
+            {% if show_featured %}
+            <span class="text-light-grey h-spacing-left-1"><span data-grid-featured-count>{{ featured_count }}</span>/{{ max_featured }} featured</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="between middle no-gutters v-spacing-top-4">
+        <div class="input-wrapper w-100" style="max-width: 250px;">
+            <i class="bw-icon-search input-icon"></i><input type="search" data-grid-search placeholder="Search in {{ grid_object_name }}..." role="searchbox" autocomplete="off" value="{{ current_search }}">
+        </div>
+        <div class="no-wrap browse__search-overview-sorter">
+            <label class="text-light-grey d-none d-md-inline">Sort by:</label>
+            <select data-grid-sort>
+                {% for key, label in sort_options.items %}
+                    <option value="{{ key }}"{% if key == current_sort %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div data-grid-content class="v-spacing-top-2">
+        {% include "molecules/editable_sound_grid_content.html" %}
+    </div>
+    <div class="v-spacing-top-4">
+        <button type="button" class="btn-inverse" data-toggle="add-sounds-modal" data-modal-url="{{ add_sounds_modal_url }}">{% bw_icon 'plus' %}Add sounds</button>
+    </div>
+</div>

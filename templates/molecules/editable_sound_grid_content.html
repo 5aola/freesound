@@ -1,0 +1,22 @@
+{% load display_sound %}
+{# Swapped wholesale on every grid refresh; data-grid-total feeds the JS count labels #}
+<div class="bw-object-selector-container row no-gutters" style="margin-left:-8px;margin-right:-8px" data-grid-total="{{ total_count }}">
+    {% for sound in sounds %}
+        <div class="col-md-4 col-6">
+            {% display_sound_small_with_actions sound %}
+        </div>
+    {% endfor %}
+</div>
+{% if grid_is_empty %}
+<div class="text-center v-spacing-top-4">
+    <h5>No sounds... &#128543</h5>
+    <div class="text-grey v-spacing-top-1">This {{ grid_object_name }} is empty, click on "Add sounds" to add some</div>
+</div>
+{% elif not sounds and current_search %}
+<div class="v-spacing-3 text-grey">
+    No sounds found matching "{{ current_search }}". <a href="#" data-clear-search>Clear search</a>
+</div>
+{% endif %}
+<div class="v-spacing-top-3">
+    {% include "molecules/paginator.html" %}
+</div>

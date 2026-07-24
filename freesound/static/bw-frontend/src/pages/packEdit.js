@@ -1,3 +1,3 @@
-import { prepareAddSoundsModalAndFields } from '../components/addSoundsModal';
+import { initEditableSoundGrid } from '../utils/editableSoundGrid';
 
-prepareAddSoundsModalAndFields(document);
+document.querySelectorAll('[data-editable-sound-grid]').forEach(initEditableSoundGrid);

@@ -26,28 +26,7 @@ from django.forms import Textarea, TextInput
 
 from fscollections.models import Collection, CollectionSound
 from sounds.models import Sound
-
-
-class CommaSeparatedIdField(forms.CharField):
-    """CharField that coerces a comma-separated string of ints into a set (or list)."""
-
-    def __init__(self, *args, as_list=False, **kwargs):
-        self._as_list = as_list
-        super().__init__(*args, **kwargs)
-
-    def clean(self, value):
-        value = super().clean(value)
-        if not value:
-            return [] if self._as_list else set()
-        if self._as_list:
-            seen = set()
-            ids = []
-            for i in value.replace(" ", "").split(","):
-                if i.isdigit() and int(i) not in seen:
-                    seen.add(int(i))
-                    ids.append(int(i))
-            return ids
-        return {int(i) for i in value.replace(" ", "").split(",") if i.isdigit()}
+from utils.forms import CommaSeparatedIdField
 
 
 class SelectCollectionForm(forms.Form):
@@ -173,12 +152,12 @@ class SelectCollectionForm(forms.Form):
 
 class CollectionEditForm(forms.ModelForm):
     added_sounds = CommaSeparatedIdField(
-        widget=forms.widgets.HiddenInput(attrs={"id": "added_sound_ids"}),
+        widget=forms.widgets.HiddenInput(attrs={"data-delta": "added"}),
         required=False,
     )
 
     removed_sounds = CommaSeparatedIdField(
-        widget=forms.widgets.HiddenInput(attrs={"id": "removed_sound_ids"}),
+        widget=forms.widgets.HiddenInput(attrs={"data-delta": "removed"}),
         required=False,
     )
 
@@ -188,7 +167,7 @@ class CollectionEditForm(forms.ModelForm):
 
     featured_sounds = CommaSeparatedIdField(
         as_list=True,
-        widget=forms.widgets.HiddenInput(attrs={"id": "featured_sounds", "name": "featured_sounds"}),
+        widget=forms.widgets.HiddenInput(attrs={"data-delta": "featured"}),
         required=False,
     )
 
@@ -197,11 +176,6 @@ class CollectionEditForm(forms.ModelForm):
         self.is_maintainer = kwargs.pop("is_maintainer", False)
         super().__init__(*args, **kwargs)
         self.fields["public"].label = "Visibility"
-
-        self.fields["added_sounds"].help_text = (
-            f"You have reached the maximum number of sounds available for a collection ({settings.MAX_SOUNDS_PER_COLLECTION}). "
-            "In order to add new sounds, first remove some of the current ones."
-        )
 
         if self.instance.is_default_collection:
             self.fields["name"].disabled = True
@@ -234,17 +208,10 @@ class CollectionEditForm(forms.ModelForm):
                     ),
                 )
 
-        featured = cleaned_data.get("featured_sounds", [])
-        if len(featured) > settings.MAX_FEATURED_SOUNDS_PER_COLLECTION:
-            self.add_error(
-                "featured_sounds",
-                forms.ValidationError(
-                    f"You can only feature up to {settings.MAX_FEATURED_SOUNDS_PER_COLLECTION} sounds per collection."
-                ),
-            )
-
-        added = cleaned_data.get("added_sounds", set())
         removed = cleaned_data.get("removed_sounds", set())
+        # A sound both pending-added and pending-removed nets out to no change
+        added = cleaned_data.get("added_sounds", set()) - removed
+        cleaned_data["added_sounds"] = added
         current_sound_ids = set(
             CollectionSound.objects.filter(collection=self.instance).values_list("sound_id", flat=True)
         )
@@ -264,6 +231,18 @@ class CollectionEditForm(forms.ModelForm):
                 "added_sounds",
                 forms.ValidationError(
                     f"You have exceeded the maximum number of sounds for a collection ({settings.MAX_SOUNDS_PER_COLLECTION})."
+                ),
+            )
+
+        # The featured input keeps flags on pending-removed sounds (so undoing a removal
+        # restores them); validate the limit against the effective final members only.
+        final_sound_ids = (current_sound_ids - removed) | added
+        featured = [sid for sid in cleaned_data.get("featured_sounds", []) if sid in final_sound_ids]
+        if len(featured) > settings.MAX_FEATURED_SOUNDS_PER_COLLECTION:
+            self.add_error(
+                "featured_sounds",
+                forms.ValidationError(
+                    f"You can only feature up to {settings.MAX_FEATURED_SOUNDS_PER_COLLECTION} sounds per collection."
                 ),
             )
         return cleaned_data

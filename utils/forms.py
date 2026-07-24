@@ -55,6 +55,28 @@ class HtmlCleaningCharFieldWithCenterTag(HtmlCleaningCharField):
     ok_attributes = {"a": ["href", "rel"], "img": ["src", "alt", "title"], "p": ["align"]}
 
 
+class CommaSeparatedIdField(forms.CharField):
+    """CharField that coerces a comma-separated string of ints into a set (or list)."""
+
+    def __init__(self, *args, as_list=False, **kwargs):
+        self._as_list = as_list
+        super().__init__(*args, **kwargs)
+
+    def clean(self, value):
+        value = super().clean(value)
+        if not value:
+            return [] if self._as_list else set()
+        if self._as_list:
+            seen = set()
+            ids = []
+            for i in value.replace(" ", "").split(","):
+                if i.isdigit() and int(i) not in seen:
+                    seen.add(int(i))
+                    ids.append(int(i))
+            return ids
+        return {int(i) for i in value.replace(" ", "").split(",") if i.isdigit()}
+
+
 class TagField(forms.CharField):
     """Gets the value of tags as a single string (with tags separated by spaces or commas) and cleans it to a set of
     unique tag strings"""

@@ -5,22 +5,9 @@ import {
 } from '../components/objectSelector';
 import { serializedIdListToIntList, combineIdsLists } from '../utils/data';
 
-// Read the sidecar fields off a server-rendered card so the dynamic flow can
-// push freshly-added sounds into the editor's store. ``date_added`` is the
-// client-side timestamp; the server stamps its own when the form is saved.
-const extractSoundFromCard = card => {
-  const player = card.querySelector('.bw-player');
-  if (!player) return null;
-  const d = player.dataset;
-  return {
-    id: parseInt(d.soundId, 10),
-    name: d.title || '',
-    username: d.username || '',
-    duration: parseFloat(d.duration) || 0,
-    date_added: new Date().toISOString(),
-  };
-};
-
+// DOM-based add-sounds flow used by the sources field in the describe/edit forms:
+// confirmed sound cards are moved out of the modal into the field's selector, and
+// the hidden input carries the full id list.
 const prepareAddSoundsModalAndFields = container => {
   const addSoundsButtons = [
     ...container.querySelectorAll(`[data-toggle^="add-sounds-modal"]`),
@@ -37,41 +24,6 @@ const prepareAddSoundsModalAndFields = container => {
       removeSoundsButton.disabled = element.dataset.selectedIds == '';
     });
 
-    const soundsInput =
-      selectedSoundsDestinationElement.parentNode.parentNode.getElementsByTagName(
-        'input'
-      )[0];
-    if (soundsInput.disabled) {
-      addSoundsButton.disabled = true;
-      const checkboxes = selectedSoundsDestinationElement.querySelectorAll(
-        'span.bw-checkbox-container'
-      );
-      checkboxes.forEach(checkbox => {
-        checkbox.remove();
-      });
-    }
-
-    const soundsLabel =
-      selectedSoundsDestinationElement.parentNode.parentNode.getElementsByTagName(
-        'label'
-      )[0];
-    const itemCountElementInLabel =
-      soundsLabel === (null || undefined)
-        ? null
-        : soundsLabel.querySelector('#element-count');
-
-    const maxSounds = selectedSoundsDestinationElement.dataset.maxElements;
-    const maxSoundsHelpText =
-      selectedSoundsDestinationElement.parentNode.parentNode.getElementsByClassName(
-        'helptext'
-      )[0];
-    if (maxSounds !== 'None') {
-      if (soundsInput.value.split(',').length >= maxSounds) {
-        addSoundsButton.disabled = true;
-        maxSoundsHelpText.style.display = 'block';
-      }
-    }
-
     removeSoundsButton.addEventListener('click', evt => {
       evt.preventDefault();
       const soundCheckboxes =
@@ -87,17 +39,6 @@ const prepareAddSoundsModalAndFields = container => {
       );
       selectedSoundsHiddenInput.value =
         selectedSoundsDestinationElement.dataset.unselectedIds;
-      if (
-        maxSounds !== 'None' &&
-        selectedSoundsHiddenInput.value.split(',').length < maxSounds
-      ) {
-        addSoundsButton.disabled = false;
-        maxSoundsHelpText.style.display = 'none';
-      }
-      if (itemCountElementInLabel) {
-        itemCountElementInLabel.innerHTML =
-          selectedSoundsDestinationElement.children.length;
-      }
       removeSoundsButton.disabled = true;
     });
 
@@ -146,17 +87,6 @@ const prepareAddSoundsModalAndFields = container => {
           );
           const combinedIds = combineIdsLists(currentSoundIds, newSoundIds);
           selectedSoundsHiddenInput.value = combinedIds.join(',');
-          if (
-            maxSounds !== 'None' &&
-            selectedSoundsHiddenInput.value.split(',').length >= maxSounds
-          ) {
-            addSoundsButton.disabled = true;
-            maxSoundsHelpText.style.display = 'block';
-          }
-          if (itemCountElementInLabel) {
-            itemCountElementInLabel.innerHTML =
-              selectedSoundsDestinationElement.children.length;
-          }
           initializeObjectSelector(
             selectedSoundsDestinationElement,
             element => {
@@ -216,6 +146,8 @@ const openAddSoundsModal = (
   );
 };
 
+// Id-based add-sounds flow used by the editable sound grid: confirming the modal
+// just reports the selected sound ids, the grid re-renders server-side.
 const prepareAddSoundsModalDynamic = (
   container,
   getExcludeIds,
@@ -227,16 +159,10 @@ const prepareAddSoundsModalDynamic = (
   if (!addSoundsButton) return;
 
   const onConfirmed = modalContainer => {
-    const sounds = [
-      ...modalContainer.querySelectorAll('.bw-selectable-object'),
-    ].reduce((acc, element) => {
-      const checkbox = element.querySelector('input.bw-checkbox');
-      if (checkbox && checkbox.checked) {
-        acc.push(extractSoundFromCard(element));
-      }
-      return acc;
-    }, []);
-    onSoundsConfirmed(sounds);
+    const ids = [
+      ...modalContainer.querySelectorAll('input.bw-checkbox:checked'),
+    ].map(checkbox => checkbox.dataset.objectId);
+    onSoundsConfirmed(ids);
   };
 
   addSoundsButton.addEventListener('click', evt => {

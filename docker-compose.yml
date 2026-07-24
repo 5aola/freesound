@@ -58,8 +58,6 @@ services:
             context: ./
             dockerfile: ./docker/Dockerfile.workers_web
             target: frontend_build
-            platforms:
-              - linux/amd64
         volumes:
             - .:/code
             - /code/node_modules

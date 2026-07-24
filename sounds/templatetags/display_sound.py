@@ -367,13 +367,20 @@ def display_sound_small_selectable(context, sound, selected=False):
 
 
 @register.inclusion_tag("sounds/display_sound_with_actions.html", takes_context=True)
-def display_sound_small_with_actions(context, sound, is_featured=False):
-    """Display sound with featured and remove action toggles below it."""
-    context = context.get("original_context", context)  # This is to allow passing context in nested inclusion tags
+def display_sound_small_with_actions(context, sound):
+    """Display sound with remove (and optionally featured) pending-action toggles below it.
+
+    Per-sound pending state is read from attributes set by utils.editable_sound_grid;
+    ``show_featured``/``grid_object_name`` come from the grid template context.
+    """
     tvars = display_sound_small_no_bookmark_no_ratings(context, sound)
     tvars.update(
         {
-            "is_featured": is_featured,
+            "is_featured": getattr(sound, "is_featured", False),
+            "marked_removed": getattr(sound, "marked_removed", False),
+            "featured_disabled": getattr(sound, "featured_disabled", False),
+            "show_featured": context.get("show_featured", False),
+            "grid_object_name": context.get("grid_object_name", ""),
         }
     )
     return tvars

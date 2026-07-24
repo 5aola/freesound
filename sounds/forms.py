@@ -32,7 +32,7 @@ from django_recaptcha.fields import ReCaptchaField
 
 from sounds.models import Flag, License, Pack, Sound
 from utils.encryption import sign_with_timestamp, unsign_with_timestamp
-from utils.forms import HtmlCleaningCharField, TagField
+from utils.forms import CommaSeparatedIdField, HtmlCleaningCharField, TagField
 
 
 def _remix_form_clean_sources_helper(cleaned_data):
@@ -127,9 +127,12 @@ class PackForm(forms.Form):
 
 
 class PackEditForm(ModelForm):
-    pack_sounds = forms.CharField(
-        min_length=1,
-        widget=forms.widgets.HiddenInput(attrs={"id": "pack_sounds", "name": "pack_sounds"}),
+    added_sounds = CommaSeparatedIdField(
+        widget=forms.widgets.HiddenInput(attrs={"data-delta": "added"}),
+        required=False,
+    )
+    removed_sounds = CommaSeparatedIdField(
+        widget=forms.widgets.HiddenInput(attrs={"data-delta": "removed"}),
         required=False,
     )
     description = HtmlCleaningCharField(
@@ -138,35 +141,31 @@ class PackEditForm(ModelForm):
         required=False,
     )
 
-    def clean_pack_sounds(self):
-        pack_sounds = re.sub("[^0-9,]", "", self.cleaned_data["pack_sounds"])
-        pack_sounds = re.sub(",+", ",", pack_sounds)
-        pack_sounds = re.sub("^,+", "", pack_sounds)
-        pack_sounds = re.sub(",+$", "", pack_sounds)
-        if len(pack_sounds) > 0:
-            pack_sounds = {int(sound) for sound in pack_sounds.split(",")}
-        else:
-            pack_sounds = set()
-        return pack_sounds
+    def clean_added_sounds(self):
+        added = self.cleaned_data["added_sounds"]
+        owned = set(Sound.objects.filter(id__in=added, user=self.instance.user).values_list("id", flat=True))
+        if added - owned:
+            raise forms.ValidationError("You can only add your own sounds to a pack.")
+        return added
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # A sound both pending-added and pending-removed nets out to no change
+        if "added_sounds" in cleaned_data:
+            cleaned_data["added_sounds"] -= cleaned_data.get("removed_sounds", set())
+        return cleaned_data
 
     def save(self, force_insert=False, force_update=False, commit=True):
         pack = super().save(commit=False)
-        affected_packs = list()
-        affected_packs.append(pack)
-        new_sounds = self.cleaned_data["pack_sounds"]
-        current_sounds = pack.sounds.all()
-        for snd in current_sounds:
-            if snd.id not in new_sounds:
-                snd.pack = None
-                snd.mark_index_dirty(commit=True)
-        for snd in new_sounds:
-            current_sounds_ids = [s.id for s in current_sounds]
-            if snd not in current_sounds_ids:
-                sound = Sound.objects.get(id=snd)
-                if sound.pack:
-                    affected_packs.append(sound.pack)
-                sound.pack = pack
-                sound.mark_index_dirty(commit=True)
+        affected_packs = [pack]
+        for sound in pack.sounds.filter(id__in=self.cleaned_data["removed_sounds"]):
+            sound.pack = None
+            sound.mark_index_dirty(commit=True)
+        for sound in Sound.objects.filter(id__in=self.cleaned_data["added_sounds"]).exclude(pack=pack):
+            if sound.pack:
+                affected_packs.append(sound.pack)
+            sound.pack = pack
+            sound.mark_index_dirty(commit=True)
         if commit:
             pack.last_updated = now()
             pack.save()

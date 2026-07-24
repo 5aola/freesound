@@ -88,15 +88,13 @@ class PackNumSoundsTestCase(TestCase):
         self.assertEqual(Pack.objects.get(id=pack1.id).num_sounds, 2)
         self.assertEqual(Pack.objects.get(id=pack2.id).num_sounds, 2)
 
-        # Move one sound from one pack to the other
-        sound_ids_pack1 = [s.id for s in pack1.sounds.all()]
-        sound_ids_pack2 = [s.id for s in pack2.sounds.all()]
-        sound_ids_pack2.append(sound_ids_pack1.pop())
+        # Move one sound from one pack to the other (adding it to a pack removes it from its former one)
+        sound_to_move = pack1.sounds.first()
         self.client.force_login(user)
         resp = self.client.post(
             reverse("pack-edit", args=[pack2.user.username, pack2.id]),
             {
-                "pack_sounds": ",".join([str(sid) for sid in sound_ids_pack2]),
+                "added_sounds": str(sound_to_move.id),
                 "name": "Test pack 1 (edited)",
                 "description": "A new description",
             },
@@ -105,7 +103,7 @@ class PackNumSoundsTestCase(TestCase):
         self.assertEqual(Pack.objects.get(id=pack1.id).num_sounds, 1)
         self.assertEqual(Pack.objects.get(id=pack2.id).num_sounds, 3)
 
-        # Move one sound that had no pack
+        # Add one sound that had no pack
         user, packs, sounds = create_user_and_sounds(num_sounds=1, num_packs=0, user=user, count_offset=5)
         sound = sounds[0]
         sound.change_processing_state("OK")
@@ -113,9 +111,7 @@ class PackNumSoundsTestCase(TestCase):
         resp = self.client.post(
             reverse("pack-edit", args=[pack2.user.username, pack2.id]),
             {
-                "pack_sounds": ",".join(
-                    [str(snd.id) for snd in Pack.objects.get(id=pack2.id).sounds.all()] + [str(sound.id)]
-                ),
+                "added_sounds": str(sound.id),
                 "name": "Test pack 1 (edited again)",
                 "description": "A new description",
             },
@@ -124,6 +120,19 @@ class PackNumSoundsTestCase(TestCase):
         self.assertEqual(Pack.objects.get(id=pack1.id).num_sounds, 1)
         self.assertEqual(Pack.objects.get(id=pack2.id).num_sounds, 4)
         self.assertEqual(Sound.objects.get(id=sound.id).pack.id, pack2.id)
+
+        # Remove a sound from the pack
+        resp = self.client.post(
+            reverse("pack-edit", args=[pack2.user.username, pack2.id]),
+            {
+                "removed_sounds": str(sound.id),
+                "name": "Test pack 1 (edited again)",
+                "description": "A new description",
+            },
+        )
+        self.assertRedirects(resp, reverse("pack", args=[pack2.user.username, pack2.id]))
+        self.assertEqual(Pack.objects.get(id=pack2.id).num_sounds, 3)
+        self.assertIsNone(Sound.objects.get(id=sound.id).pack)
 
 
 class PackViewsTestCase(TestCase):
