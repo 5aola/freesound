@@ -1,8 +1,6 @@
 {% load bw_templatetags %}
-{# Editable sound grid (collection/pack edit): the server renders the grid with the pending  #}
-{# delta (added/removed/featured sounds) baked into the cards. State lives in the page form's #}
-{# hidden inputs ([data-delta="..."]) and travels with every grid refresh request.            #}
-{# See editableSoundGrid.js and utils/editable_sound_grid.py.                                 #}
+{# Editable sound grid (collection/pack edit), rendered with the pending delta from the form's #}
+{# [data-delta] inputs. See editableSoundGrid.js and utils/editable_sound_grid.py.             #}
 <div data-editable-sound-grid{% if max_featured %} data-max-featured="{{ max_featured }}"{% endif %}>
     <div class="between middle no-gutters">
         <div class="no-wrap">

@@ -1,12 +1,7 @@
-// Editable sound grid for the collection/pack edit pages.
-//
-// The server is the source of truth for the sound list; the only client state is
-// the pending delta, held in the page form's hidden inputs ([data-delta="added"],
-// [data-delta="removed"] and optionally [data-delta="featured"]) which are also the
-// form's submit contract. Toggling a card action just flips the id in its input and
-// restyles the card; search/sort/pagination and modal adds re-fetch the grid from
-// the page URL (HX-Request branch of the edit view), sending the delta along so
-// pending state comes back baked into the cards. See utils/editable_sound_grid.py.
+// Editable sound grid for the collection/pack edit pages. The only client state is the
+// pending delta, held in the form's hidden [data-delta] inputs, which is also the submit
+// contract. Card toggles just flip an id in its input; search/sort/pagination and modal
+// adds re-fetch the grid with the delta. See utils/editable_sound_grid.py.
 
 import { prepareAddSoundsModalDynamic } from '../components/addSoundsModal';
 import { updateActionUI } from '../components/objectSelector';
@@ -30,8 +25,7 @@ export const initEditableSoundGrid = root => {
     inputs[name].value = [...set].join(',');
   };
 
-  // Card button state and counts are all derivable from the inputs plus the
-  // server-stamped total; recompute wholesale after every toggle and grid swap.
+  // Button state and counts derive from the inputs, recompute after every toggle and swap
   const sync = () => {
     const removed = ids('removed');
     const featured = inputs.featured ? ids('featured') : new Set();
@@ -100,7 +94,7 @@ export const initEditableSoundGrid = root => {
   sortSelect.addEventListener('change', refreshFromFirstPage);
   contentEl.addEventListener('htmx:afterSwap', sync);
 
-  // The server already excludes saved members from the modal; send only pending adds
+  // Saved members are already excluded server-side, only send pending adds
   prepareAddSoundsModalDynamic(root, () => inputs.added.value, newIds => {
     const set = ids('added');
     newIds.forEach(id => set.add(String(id)));

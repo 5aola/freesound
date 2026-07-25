@@ -27,7 +27,7 @@ register = template.Library()
 
 
 @register.inclusion_tag("molecules/object_selector.html", takes_context=True)
-def sounds_selector(context, sounds, max_sounds=None, selected_sound_ids=[], show_select_all_buttons=False):
+def sounds_selector(context, sounds, selected_sound_ids=[], show_select_all_buttons=False):
     if sounds:
         if not isinstance(sounds[0], Sound):
             # sounds are passed as a list of sound ids, retrieve the Sound objects from DB
@@ -40,7 +40,6 @@ def sounds_selector(context, sounds, max_sounds=None, selected_sound_ids=[], sho
         "type": "sounds",
         "show_select_all_buttons": show_select_all_buttons,
         "original_context": context,  # This will be used so a nested inclusion tag can get the original context
-        "max_elements": max_sounds,
     }
 
 

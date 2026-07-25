@@ -32,7 +32,7 @@ from django_recaptcha.fields import ReCaptchaField
 
 from sounds.models import Flag, License, Pack, Sound
 from utils.encryption import sign_with_timestamp, unsign_with_timestamp
-from utils.forms import CommaSeparatedIdField, HtmlCleaningCharField, TagField
+from utils.forms import DeltaSoundsFormMixin, HtmlCleaningCharField, TagField
 
 
 def _remix_form_clean_sources_helper(cleaned_data):
@@ -126,15 +126,7 @@ class PackForm(forms.Form):
         return _pack_form_clean_helper(self.cleaned_data)
 
 
-class PackEditForm(ModelForm):
-    added_sounds = CommaSeparatedIdField(
-        widget=forms.widgets.HiddenInput(attrs={"data-delta": "added"}),
-        required=False,
-    )
-    removed_sounds = CommaSeparatedIdField(
-        widget=forms.widgets.HiddenInput(attrs={"data-delta": "removed"}),
-        required=False,
-    )
+class PackEditForm(DeltaSoundsFormMixin, ModelForm):
     description = HtmlCleaningCharField(
         widget=forms.Textarea(attrs={"cols": 80, "rows": 10}),
         help_text=HtmlCleaningCharField.make_help_text(),
@@ -148,20 +140,14 @@ class PackEditForm(ModelForm):
             raise forms.ValidationError("You can only add your own sounds to a pack.")
         return added
 
-    def clean(self):
-        cleaned_data = super().clean()
-        # A sound both pending-added and pending-removed nets out to no change
-        if "added_sounds" in cleaned_data:
-            cleaned_data["added_sounds"] -= cleaned_data.get("removed_sounds", set())
-        return cleaned_data
-
     def save(self, force_insert=False, force_update=False, commit=True):
         pack = super().save(commit=False)
         affected_packs = [pack]
         for sound in pack.sounds.filter(id__in=self.cleaned_data["removed_sounds"]):
             sound.pack = None
             sound.mark_index_dirty(commit=True)
-        for sound in Sound.objects.filter(id__in=self.cleaned_data["added_sounds"]).exclude(pack=pack):
+        sounds_to_add = Sound.objects.filter(id__in=self.cleaned_data["added_sounds"]).exclude(pack=pack)
+        for sound in sounds_to_add.select_related("pack"):
             if sound.pack:
                 affected_packs.append(sound.pack)
             sound.pack = pack

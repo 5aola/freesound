@@ -132,7 +132,7 @@
 
   .remove-toggle {
     flex: 0 0 auto;
-    margin-left: auto; // keep right-aligned even when the featured toggle is absent
+    margin-left: auto; // stay right-aligned without the featured toggle
     padding: 8px 12px;
     min-width: 60px;
 

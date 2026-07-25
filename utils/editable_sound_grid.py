@@ -19,13 +19,13 @@
 #
 
 from django.conf import settings
+from django.utils import timezone
 
 from sounds.models import Sound
+from utils.forms import parse_comma_separated_ids
 from utils.pagination import build_paginator_template_context, paginate
 
-# Sort options for editable sound grids (collection/pack edit). Sorting happens here,
-# server-side, over lightweight metadata; the "featured" option is only exposed when
-# the grid tracks featured sounds (max_featured is set).
+# Sort options shared by the sound grids (collection page, collection/pack edit). First one is the default
 EDITABLE_GRID_SORT_OPTIONS = {
     "featured": "Featured first",
     "created_desc": "Date added (newest first)",
@@ -33,42 +33,39 @@ EDITABLE_GRID_SORT_OPTIONS = {
     "name": "Name (A to Z)",
 }
 
-
-def parse_id_list(value):
-    """Ordered, de-duplicated int ids from a comma-separated string."""
-    seen = set()
-    ids = []
-    for part in value.split(","):
-        if part.isdigit() and int(part) not in seen:
-            seen.add(int(part))
-            ids.append(int(part))
-    return ids
+# Pending delta params, stripped from paginator hrefs so a non-htmx page link can't discard the delta
+DELTA_PARAMS = ("added_sounds", "removed_sounds", "featured_sounds")
 
 
 def editable_sound_grid_context(
-    request, saved_sounds_meta, addable_sounds_qs, object_name, max_featured=None, saved_featured_ids=None
+    request,
+    saved_sounds_meta,
+    addable_sounds_qs,
+    object_name,
+    max_featured=None,
+    saved_featured_ids=None,
+    pending_date_now=False,
 ):
-    """Template context for molecules/editable_sound_grid_content.html with the pending delta baked in.
+    """Context for molecules/editable_sound_grid_content.html, with the client's pending delta baked in.
 
-    The client keeps no copy of the saved sound list: on every grid refresh it only
-    sends the pending delta (``added_sounds``/``removed_sounds``/``featured_sounds``,
-    mirrored from the form's hidden inputs) plus ``q``/``s``/``page``, and gets back
-    the grid rendered with that state applied (added sounds included, removed ones
-    marked for removal, featured buttons active). See editableSoundGrid.js.
+    The client only holds the delta (added/removed/featured ids) and sends it on every grid
+    refresh together with q/s/page, see editableSoundGrid.js.
 
-    Args:
-        saved_sounds_meta: [{"id", "name", "username", "date_added"}] of the saved members.
-        addable_sounds_qs: Sound queryset that pending-added ids must belong to
-            (e.g. only the pack owner's sounds); others are silently dropped.
-        object_name: "collection" or "pack", used in grid texts.
-        max_featured: enables the featured action and sort when set.
-        saved_featured_ids: saved featured order, used until the client sends a pending one.
+    saved_sounds_meta: [{"id", "name", "username", "date_added"}] of the saved members.
+    addable_sounds_qs: sounds that pending-added ids must belong to, others are dropped.
+    object_name: "collection" or "pack", used in grid texts.
+    max_featured: enables the featured action and sort when set.
+    saved_featured_ids: saved featured order, used until the client sends a pending one.
+    pending_date_now: date pending-added sounds as "now" instead of their upload date.
     """
     params = request.POST if request.method == "POST" else request.GET
-    added_ids = parse_id_list(params.get("added_sounds", ""))
-    removed_ids = set(parse_id_list(params.get("removed_sounds", "")))
+    # Cap the client-supplied list so a crafted request can't drive a huge IN query
+    added_ids = parse_comma_separated_ids(
+        params.get("added_sounds", ""), as_list=True, limit=settings.MAX_SOUNDS_PER_COLLECTION
+    )
+    removed_ids = parse_comma_separated_ids(params.get("removed_sounds", ""))
     if "featured_sounds" in params:
-        featured_ids = parse_id_list(params["featured_sounds"])
+        featured_ids = parse_comma_separated_ids(params["featured_sounds"], as_list=True)
     else:
         featured_ids = list(saved_featured_ids or [])
 
@@ -83,12 +80,13 @@ def editable_sound_grid_context(
             )
         }
         pending_added = [sid for sid in pending_added if sid in added_meta]
+        now = timezone.now()
         sounds_meta += [
             {
                 "id": sid,
                 "name": added_meta[sid]["original_filename"],
                 "username": added_meta[sid]["user__username"],
-                "date_added": added_meta[sid]["created"],
+                "date_added": now if pending_date_now else added_meta[sid]["created"],
             }
             for sid in pending_added
         ]
@@ -140,5 +138,8 @@ def editable_sound_grid_context(
         "featured_count": featured_count,
         "grid_is_empty": not all_ids,
     }
-    tvars.update(build_paginator_template_context(pagination["page"], base_path=request.path, base_query=request.GET))
+    base_query = request.GET.copy()
+    for key in DELTA_PARAMS:
+        base_query.pop(key, None)
+    tvars.update(build_paginator_template_context(pagination["page"], base_path=request.path, base_query=base_query))
     return tvars

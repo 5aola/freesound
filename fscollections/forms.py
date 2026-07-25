@@ -26,7 +26,7 @@ from django.forms import Textarea, TextInput
 
 from fscollections.models import Collection, CollectionSound
 from sounds.models import Sound
-from utils.forms import CommaSeparatedIdField
+from utils.forms import CommaSeparatedIdField, DeltaSoundsFormMixin
 
 
 class SelectCollectionForm(forms.Form):
@@ -150,20 +150,8 @@ class SelectCollectionForm(forms.Form):
         return clean_data
 
 
-class CollectionEditForm(forms.ModelForm):
-    added_sounds = CommaSeparatedIdField(
-        widget=forms.widgets.HiddenInput(attrs={"data-delta": "added"}),
-        required=False,
-    )
-
-    removed_sounds = CommaSeparatedIdField(
-        widget=forms.widgets.HiddenInput(attrs={"data-delta": "removed"}),
-        required=False,
-    )
-
-    maintainers = CommaSeparatedIdField(
-        min_length=1, widget=forms.widgets.HiddenInput(attrs={"id": "maintainers"}), required=False
-    )
+class CollectionEditForm(DeltaSoundsFormMixin, forms.ModelForm):
+    maintainers = CommaSeparatedIdField(widget=forms.widgets.HiddenInput(attrs={"id": "maintainers"}), required=False)
 
     featured_sounds = CommaSeparatedIdField(
         as_list=True,
@@ -197,7 +185,7 @@ class CollectionEditForm(forms.ModelForm):
             )
             return cleaned_data
 
-        if cleaned_data["name"] != self.instance.name:
+        if "name" in cleaned_data and cleaned_data["name"] != self.instance.name:
             if Collection.objects.filter(user=self.instance.user, name=cleaned_data["name"]).exists():
                 self.add_error("name", forms.ValidationError("You already have a collection with this name"))
             elif cleaned_data["name"].lower() == "my bookmarks":
@@ -208,10 +196,9 @@ class CollectionEditForm(forms.ModelForm):
                     ),
                 )
 
+        # added_sounds is already netted against removed_sounds by the mixin
         removed = cleaned_data.get("removed_sounds", set())
-        # A sound both pending-added and pending-removed nets out to no change
-        added = cleaned_data.get("added_sounds", set()) - removed
-        cleaned_data["added_sounds"] = added
+        added = cleaned_data.get("added_sounds", set())
         current_sound_ids = set(
             CollectionSound.objects.filter(collection=self.instance).values_list("sound_id", flat=True)
         )
@@ -234,8 +221,7 @@ class CollectionEditForm(forms.ModelForm):
                 ),
             )
 
-        # The featured input keeps flags on pending-removed sounds (so undoing a removal
-        # restores them); validate the limit against the effective final members only.
+        # Featured flags are kept on pending-removed sounds, so only count the final members
         final_sound_ids = (current_sound_ids - removed) | added
         featured = [sid for sid in cleaned_data.get("featured_sounds", []) if sid in final_sound_ids]
         if len(featured) > settings.MAX_FEATURED_SOUNDS_PER_COLLECTION:

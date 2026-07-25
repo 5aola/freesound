@@ -55,6 +55,28 @@ class HtmlCleaningCharFieldWithCenterTag(HtmlCleaningCharField):
     ok_attributes = {"a": ["href", "rel"], "img": ["src", "alt", "title"], "p": ["align"]}
 
 
+def parse_comma_separated_ids(value, as_list=False, limit=None):
+    """Coerce a comma-separated string of ints into a set (or ordered, de-duplicated list).
+
+    Non-numeric parts are dropped and ``limit`` caps how many ids are kept.
+    """
+    if not value:
+        return [] if as_list else set()
+    parts = value.replace(" ", "").split(",")
+    if as_list:
+        seen = set()
+        ids = []
+        for i in parts:
+            if i.isdigit() and int(i) not in seen:
+                seen.add(int(i))
+                ids.append(int(i))
+                if limit is not None and len(ids) >= limit:
+                    break
+        return ids
+    ids = {int(i) for i in parts if i.isdigit()}
+    return set(list(ids)[:limit]) if limit is not None else ids
+
+
 class CommaSeparatedIdField(forms.CharField):
     """CharField that coerces a comma-separated string of ints into a set (or list)."""
 
@@ -64,17 +86,21 @@ class CommaSeparatedIdField(forms.CharField):
 
     def clean(self, value):
         value = super().clean(value)
-        if not value:
-            return [] if self._as_list else set()
-        if self._as_list:
-            seen = set()
-            ids = []
-            for i in value.replace(" ", "").split(","):
-                if i.isdigit() and int(i) not in seen:
-                    seen.add(int(i))
-                    ids.append(int(i))
-            return ids
-        return {int(i) for i in value.replace(" ", "").split(",") if i.isdigit()}
+        return parse_comma_separated_ids(value, as_list=self._as_list)
+
+
+class DeltaSoundsFormMixin(forms.Form):
+    """Hidden added/removed sound-id fields for the editable sound grid forms (see utils.editable_sound_grid)."""
+
+    added_sounds = CommaSeparatedIdField(widget=forms.HiddenInput(attrs={"data-delta": "added"}), required=False)
+    removed_sounds = CommaSeparatedIdField(widget=forms.HiddenInput(attrs={"data-delta": "removed"}), required=False)
+
+    def clean(self):
+        # Net added against removed so a sound both pending-added and pending-removed is a no-op
+        cleaned_data = super().clean()
+        added = cleaned_data.get("added_sounds", set())
+        cleaned_data["added_sounds"] = added - cleaned_data.get("removed_sounds", set())
+        return cleaned_data
 
 
 class TagField(forms.CharField):

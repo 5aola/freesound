@@ -368,10 +368,9 @@ def display_sound_small_selectable(context, sound, selected=False):
 
 @register.inclusion_tag("sounds/display_sound_with_actions.html", takes_context=True)
 def display_sound_small_with_actions(context, sound):
-    """Display sound with remove (and optionally featured) pending-action toggles below it.
+    """Display sound with remove (and optionally featured) toggles below it.
 
-    Per-sound pending state is read from attributes set by utils.editable_sound_grid;
-    ``show_featured``/``grid_object_name`` come from the grid template context.
+    Pending state comes from attributes set by utils.editable_sound_grid.
     """
     tvars = display_sound_small_no_bookmark_no_ratings(context, sound)
     tvars.update(

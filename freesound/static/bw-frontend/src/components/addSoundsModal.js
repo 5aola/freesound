@@ -5,9 +5,8 @@ import {
 } from '../components/objectSelector';
 import { serializedIdListToIntList, combineIdsLists } from '../utils/data';
 
-// DOM-based add-sounds flow used by the sources field in the describe/edit forms:
-// confirmed sound cards are moved out of the modal into the field's selector, and
-// the hidden input carries the full id list.
+// DOM-based add-sounds flow for the sources field: confirmed cards are moved into the
+// field's selector and the hidden input carries the full id list
 const prepareAddSoundsModalAndFields = container => {
   const addSoundsButtons = [
     ...container.querySelectorAll(`[data-toggle^="add-sounds-modal"]`),
@@ -146,8 +145,8 @@ const openAddSoundsModal = (
   );
 };
 
-// Id-based add-sounds flow used by the editable sound grid: confirming the modal
-// just reports the selected sound ids, the grid re-renders server-side.
+// Id-based add-sounds flow for the editable sound grid: confirming reports the selected
+// ids and the grid re-renders server-side
 const prepareAddSoundsModalDynamic = (
   container,
   getExcludeIds,

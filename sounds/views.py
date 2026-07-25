@@ -787,7 +787,7 @@ def edit_and_describe_sounds_helper(request, describing=False, session_key_prefi
 
 def pack_sounds_grid_context(request, pack):
     """Editable grid context for the pack edit page (see utils.editable_sound_grid)."""
-    own_sounds = Sound.objects.filter(user=pack.user, moderation_state="OK", processing_state="OK")
+    own_sounds = Sound.public.filter(user=pack.user)
     saved_sounds_meta = [
         {"id": sid, "name": name, "username": pack.user.username, "date_added": created}
         for sid, name, created in own_sounds.filter(pack=pack).values_list("id", "original_filename", "created")
@@ -805,7 +805,7 @@ def pack_edit(request, username, pack_id):
         raise PermissionDenied
 
     if request.method == "GET" and request.headers.get("HX-Request"):
-        # Grid refresh (search/sort/pagination/modal add) with the pending delta applied
+        # Grid refresh with the pending delta applied
         return render(request, "molecules/editable_sound_grid_content.html", pack_sounds_grid_context(request, pack))
 
     if request.method == "POST":
@@ -827,7 +827,7 @@ def pack_edit(request, username, pack_id):
         "form": form,
         "add_sounds_modal_url": reverse("add-sounds-modal-pack", args=[pack.id]),
     }
-    # On a POST with errors the grid re-renders with the submitted (still pending) delta
+    # On a POST with errors the grid re-renders with the submitted delta
     tvars.update(pack_sounds_grid_context(request, pack))
     return render(request, "sounds/pack_edit.html", tvars)
 
@@ -841,7 +841,7 @@ def add_sounds_modal_helper(request, username=None, exclude_ids=None):
     tvars = {"sounds_to_select": [], "q": request.GET.get("q", ""), "search_executed": False}
     if request.GET.get("q", None) is not None:
         tvars["search_executed"] = True
-        # Merge view-provided exclusions (e.g. saved grid members) with the client's pending-added ids
+        # Merge view-provided exclusions with the client's pending-added ids
         exclude = [str(sid) for sid in exclude_ids or []]
         exclude += [sid for sid in request.GET.get("exclude", "").split(",") if sid.isdigit()]
         if request.GET["q"] != "" or username is not None:
@@ -862,7 +862,7 @@ def add_sounds_modal_helper(request, username=None, exclude_ids=None):
 @login_required
 def add_sounds_modal_for_pack_edit(request, pack_id):
     pack = get_object_or_404(Pack, id=pack_id)
-    # Saved members are excluded here; the client only sends its pending-added ids
+    # Exclude saved members, the client only sends pending-added ids
     tvars = add_sounds_modal_helper(
         request, username=pack.user.username, exclude_ids=pack.sounds.values_list("id", flat=True)
     )

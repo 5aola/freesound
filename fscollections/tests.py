@@ -525,8 +525,7 @@ class CollectionTest(TestCase):
         self.assertContains(resp, 'id="sounds-grid"')
 
     def test_edit_collection_htmx_renders_grid_with_pending_delta(self):
-        """The edit view's HX-Request branch renders the grid fragment with the
-        client's pending delta (added/removed/featured) baked into the cards."""
+        """The HX-Request branch renders the grid with the client's pending delta applied."""
         self.client.force_login(self.user)
         CollectionSound.objects.create(user=self.user, sound=self.sound, collection=self.collection, status="OK")
         CollectionSound.objects.create(user=self.user, sound=self.sound1, collection=self.collection, status="OK")
@@ -543,13 +542,13 @@ class CollectionTest(TestCase):
 
         self.assertEqual(200, resp.status_code)
         self.assertIn("molecules/editable_sound_grid_content.html", [t.name for t in resp.templates])
-        self.assertContains(resp, f'data-object-id="{self.sound2.id}"')  # pending-added sound is rendered
-        self.assertContains(resp, "marked-for-removal")  # pending-removed sound is marked
+        self.assertContains(resp, f'data-object-id="{self.sound2.id}"')  # pending-added is rendered
+        self.assertContains(resp, "marked-for-removal")  # pending-removed is marked
         self.assertEqual(2, resp.context["present_count"])  # 2 saved + 1 added - 1 removed
         self.assertEqual(1, resp.context["featured_count"])
 
     def test_edit_collection_htmx_featured_sort_uses_saved_order(self):
-        # Without a pending featured_sounds param the saved featured order applies
+        # Without a pending featured_sounds param the saved order applies
         for sound in [self.sound, self.sound1, self.sound2]:
             CollectionSound.objects.create(user=self.user, sound=sound, collection=self.collection, status="OK")
         self.collection.featured_sound_ids = [self.sound2.id, self.sound.id]
@@ -575,7 +574,7 @@ class CollectionTest(TestCase):
         resp = self.client.get(self._edit_url(), HTTP_HX_REQUEST="true")
         self.assertContains(resp, "page=2")
 
-        # Asking for a page beyond the last one clamps instead of raising
+        # A page beyond the last one clamps instead of raising
         resp = self.client.get(self._edit_url(), {"page": "99"}, HTTP_HX_REQUEST="true")
         self.assertEqual(2, resp.context["current_page"])
 

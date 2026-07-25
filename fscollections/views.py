@@ -26,7 +26,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.db.models import Case, IntegerField, Q, Value, When
-from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseForbidden, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 
@@ -42,7 +42,7 @@ from fscollections.models import Collection, CollectionDownload, CollectionDownl
 from sounds.models import Sound
 from sounds.views import add_sounds_modal_helper
 from utils.downloads import download_sounds
-from utils.editable_sound_grid import editable_sound_grid_context
+from utils.editable_sound_grid import EDITABLE_GRID_SORT_OPTIONS, editable_sound_grid_context
 from utils.pagination import paginate
 
 
@@ -74,9 +74,9 @@ def collection(request, collection):
     if not collection.public and not (is_owner or is_maintainer):
         raise Http404
 
-    sort_key = request.GET.get("s") or settings.COLLECTION_SORT_DEFAULT
-    if sort_key not in settings.COLLECTION_SORT_OPTIONS:
-        sort_key = settings.COLLECTION_SORT_DEFAULT
+    sort_key = request.GET.get("s") or ""
+    if sort_key not in EDITABLE_GRID_SORT_OPTIONS:
+        sort_key = next(iter(EDITABLE_GRID_SORT_OPTIONS))
     search = request.GET.get("q", "").strip()
 
     sounds = Sound.objects.bulk_sounds_for_collection(collection.id)
@@ -99,9 +99,12 @@ def collection(request, collection):
             sounds = sounds.order_by(ordering, "collectionsound__created")
         else:
             sounds = sounds.order_by("collectionsound__created")
+    elif sort_key == "name":
+        sounds = sounds.order_by("original_filename")
     else:
-        _, sort_field = settings.COLLECTION_SORT_OPTIONS[sort_key]
-        sounds = sounds.order_by(sort_field)
+        sounds = sounds.order_by(
+            "collectionsound__created" if sort_key == "created_asc" else "-collectionsound__created"
+        )
 
     pagination = paginate(request, sounds, settings.BOOKMARKS_PER_PAGE)
     page_sounds = list(pagination["page"])
@@ -114,7 +117,7 @@ def collection(request, collection):
         "is_maintainer": is_maintainer,
         "is_following": is_following,
         "maintainers": collection.maintainers.all(),
-        "sort_options": settings.COLLECTION_SORT_OPTIONS,
+        "sort_options": EDITABLE_GRID_SORT_OPTIONS,
         "page_sounds": page_sounds,
         "featured_sound_ids_set": set(collection.featured_sound_ids or []),
         "current_sort": sort_key,
@@ -251,10 +254,11 @@ def collection_sounds_grid_context(request, collection):
     return editable_sound_grid_context(
         request,
         saved_sounds_meta,
-        addable_sounds_qs=Sound.objects.filter(moderation_state="OK", processing_state="OK"),
+        addable_sounds_qs=Sound.public.all(),
         object_name="collection",
         max_featured=settings.MAX_FEATURED_SOUNDS_PER_COLLECTION,
         saved_featured_ids=collection.featured_sound_ids,
+        pending_date_now=True,
     )
 
 
@@ -262,14 +266,15 @@ def collection_sounds_grid_context(request, collection):
 @resolve_collection_from_url
 def edit_collection(request, collection):
     maintainers_query = User.objects.filter(collection_maintainer=collection.id)
-    collection_maintainers = ",".join(str(u) for u in maintainers_query.values_list("id", flat=True))
     is_owner = request.user == collection.user
     is_maintainer = not is_owner and maintainers_query.filter(id=request.user.id).exists()
+    is_hx = request.headers.get("HX-Request")
     if not is_owner and not is_maintainer:
-        return HttpResponseRedirect(collection.get_absolute_url())
+        # Don't 302 an HX grid refresh, htmx would swap the redirect target into the grid
+        return HttpResponseForbidden() if is_hx else HttpResponseRedirect(collection.get_absolute_url())
 
-    if request.method == "GET" and request.headers.get("HX-Request"):
-        # Grid refresh (search/sort/pagination/modal add) with the pending delta applied
+    if request.method == "GET" and is_hx:
+        # Grid refresh with the pending delta applied
         return render(
             request, "molecules/editable_sound_grid_content.html", collection_sounds_grid_context(request, collection)
         )
@@ -284,7 +289,10 @@ def edit_collection(request, collection):
             form.save(user_adding_sound=request.user)
             return HttpResponseRedirect(collection.get_absolute_url())
     else:
-        featured_sounds_str = ",".join(str(sid) for sid in collection.featured_sound_ids)
+        collection_maintainers = ",".join(str(uid) for uid in maintainers_query.values_list("id", flat=True))
+        # Only seed with OK members, so a stale featured id can't inflate the client's count
+        ok_member_ids = set(Sound.objects.sounds_for_collection(collection.id).values_list("id", flat=True))
+        featured_sounds_str = ",".join(str(sid) for sid in collection.featured_sound_ids if sid in ok_member_ids)
         form = FormClass(
             instance=collection,
             initial=dict(maintainers=collection_maintainers, featured_sounds=featured_sounds_str),
@@ -302,7 +310,7 @@ def edit_collection(request, collection):
         "is_maintainer": is_maintainer,
         "add_sounds_modal_url": collection.add_sounds_modal_url,
     }
-    # On a POST with errors the grid re-renders with the submitted (still pending) delta
+    # On a POST with errors the grid re-renders with the submitted delta
     tvars.update(collection_sounds_grid_context(request, collection))
 
     return render(request, "collections/edit_collection.html", tvars)
@@ -368,8 +376,9 @@ def collection_licenses(request, collection):
 
 @resolve_collection_from_url
 def add_sounds_modal_for_collection_edit(request, collection):
-    # Saved members are excluded here; the client only sends its pending-added ids
-    member_ids = Sound.objects.sounds_for_collection(collection.id).values_list("id", flat=True)
+    # Exclude saved members (the client only sends pending-added ids), whatever their status:
+    # a pending/refused row still holds the unique slot, so re-adding it would be dropped on save
+    member_ids = CollectionSound.objects.filter(collection=collection).values_list("sound_id", flat=True)
     tvars = add_sounds_modal_helper(request, exclude_ids=member_ids)
     tvars.update({"modal_title": "Add sounds to collection", "help_text": "Modal to add sounds to your collection"})
     return render(request, "sounds/modal_add_sounds.html", tvars)

@@ -88,7 +88,7 @@ class PackNumSoundsTestCase(TestCase):
         self.assertEqual(Pack.objects.get(id=pack1.id).num_sounds, 2)
         self.assertEqual(Pack.objects.get(id=pack2.id).num_sounds, 2)
 
-        # Move one sound from one pack to the other (adding it to a pack removes it from its former one)
+        # Move one sound from one pack to the other (adding removes it from its former pack)
         sound_to_move = pack1.sounds.first()
         self.client.force_login(user)
         resp = self.client.post(
